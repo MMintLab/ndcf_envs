@@ -1,0 +1,53 @@
+<robot name="wrist">
+    <link name="world">
+    </link>
+
+    <joint name="world_to_wrist" type="prismatic">
+        <parent link="world"/>
+        <child link="wrist"/>
+        <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.4"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-1.0" upper="1.0" velocity="1e9" effort="1e9"/>
+        <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <link name="wrist">
+        <visual>
+            <origin rpy="0.0 -0.6 0.0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <box size="0.1 0.1 0.1"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin rpy="0.0 -0.6 0.0" xyz="0.0 0.0 0.0"/>
+            <geometry>
+                <box size="0.1 0.1 0.1"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="attach" type="fixed">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <parent link="wrist"/>
+        <child link="soft"/>
+    </joint>
+
+    <link name="soft">
+        <!--        <visual>-->
+        <!--            <origin rpy="0 0 3.1415" xyz="0 0 -0.155"/>-->
+        <!--            <geometry>-->
+        <!--                <mesh filename="simplified_textured_v3.obj"/>-->
+        <!--            </geometry>-->
+        <!--        </visual>-->
+        <fem>
+            <origin rpy="0 0.6 3.1415" xyz="0.1 0 -0.155"/>
+            <density value="1000"/>
+            <youngs value="3e9"/>
+            <poissons value="0.34"/>
+            <damping value="0.0"/>
+            <attachDistance value="0.05"/>
+            <tetmesh filename="simplified_textured_v3.tet"/>
+        </fem>
+    </link>
+
+</robot>
