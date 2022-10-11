@@ -11,6 +11,39 @@
         <dynamics damping="0.0" friction="0.0"/>
     </joint>
 
+    <link name="wrist_z">
+    </link>
+
+    <joint name="joint_rev_x" type="revolute">
+        <parent link="wrist_z"/>
+        <child link="wrist_rev_x"/>
+        <axis xyz="1 0 0"/>
+        <limit lower="-6.28" upper="6.28" velocity="0.1" effort="1e9"/>
+        <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <link name="wrist_rev_x">
+    </link>
+
+    <joint name="joint_rev_y" type="revolute">
+        <parent link="wrist_rev_x"/>
+        <child link="wrist_rev_y"/>
+        <axis xyz="0 1 0"/>
+        <limit lower="-6.28" upper="6.28" velocity="0.1" effort="1e9"/>
+        <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
+    <link name="wrist_rev_y">
+    </link>
+
+    <joint name="joint_rev_z" type="revolute">
+        <parent link="wrist_rev_y"/>
+        <child link="wrist"/>
+        <axis xyz="0 0 1"/>
+        <limit lower="-6.28" upper="6.28" velocity="0.1" effort="1e9"/>
+        <dynamics damping="0.0" friction="0.0"/>
+    </joint>
+
     <link name="wrist">
         <visual>
             <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
