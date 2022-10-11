@@ -272,10 +272,15 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
         else:
             break
 
-    # Visualize motion and deformation
-    gym.step_graphics(sim)
+        # Visualize motion and deformation
+        if use_viewer:
+            gym.step_graphics(sim)
+            gym.draw_viewer(viewer, sim, True)
+            gym.clear_lines(viewer)
 
+    # Visualize motion and deformation
     if use_viewer:
+        gym.step_graphics(sim)
         gym.draw_viewer(viewer, sim, True)
         gym.clear_lines(viewer)
 
