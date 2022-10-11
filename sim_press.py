@@ -7,15 +7,21 @@ from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
 import numpy as np
+from tqdm import trange
 
+from mmint_utils.trajectory_planning import get_linear_trajectory
 
 # Simulate pressing deformable tool into surface.
 # Some code borrowed from: https://sites.google.com/nvidia.com/tactiledata2
+from mmint_utils.images2gif import images2gif
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     args = parser.parse_args()
+
+    use_viewer = args.viewer
 
     gym = gymapi.acquire_gym()
 
@@ -31,12 +37,15 @@ def main():
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [30000, 200])
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3000, 20], 0.03)
 
     # Create viewer.
-    viewer, axes = create_viewer(gym, sim)
+    if use_viewer:
+        viewer, axes = create_viewer(gym, sim)
+    else:
+        viewer = axes = None
 
-    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, axes)
+    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, axes, use_viewer)
 
 
 def create_scene(gym, sim, wrist_asset_handle):
@@ -75,10 +84,11 @@ def create_sim(gym):
 
     sim_type = gymapi.SIM_FLEX
     sim_params = gymapi.SimParams()
-    sim_params.dt = 1.0e-4  # Control frequency
+    sim_params.dt = 1.0e-3  # Control frequency
     sim_params.substeps = 1  # Physics simulation frequency (multiplier)
     sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.8)
     sim_params.up_axis = gymapi.UpAxis.UP_AXIS_Z
+    sim_params.use_gpu_pipeline = False
 
     sim_params.stress_visualization = True  # von Mises stress
     sim_params.stress_visualization_min = 1.0e4
@@ -154,7 +164,7 @@ def create_viewer(gym, sim):
     return viewer, axes_geom
 
 
-def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0]):
+def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0], max_vel=0.03):
     """
     Set wrist control properties.
     """
@@ -162,7 +172,17 @@ def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0]):
     wrist_dof_props['driveMode'][0] = gymapi.DOF_MODE_POS
     wrist_dof_props['stiffness'][0] = pd_gains[0]
     wrist_dof_props['damping'][0] = pd_gains[1]
+    wrist_dof_props['velocity'][0] = max_vel
     gym.set_actor_dof_properties(env, wrist, wrist_dof_props)
+
+
+def get_wrist_dof_info(gym, env, wrist):
+    """
+    Get wrist dof info.
+    """
+    dof_states = gym.get_actor_dof_states(env, wrist, gymapi.STATE_ALL)
+
+    return dof_states["pos"], dof_states["vel"]
 
 
 def extract_net_forces(gym, sim):
@@ -216,7 +236,7 @@ def extract_nodal_coords(gym, sim, particle_states):
     return nodal_coords
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes):
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
     # gym.set_joint_target_position(env, gym.get_joint_handle(env, "wrist", "world_to_wrist"), 0.3)
 
     out_dir = "out/test_ycb/"
@@ -226,53 +246,74 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes):
     gym.refresh_particle_state_tensor(sim)
 
     t = 0
-    while not gym.query_viewer_has_closed(viewer):
+    desired_linear_velocity = 0.02  # m/s
+    desired_z_pos = -0.15
+    dt = gym.get_sim_params(sim).dt
+
+    images = []
+
+    # while not gym.query_viewer_has_closed(viewer):
+    while True:
         t += 1
 
         # Step simulator.
         gym.simulate(sim)
         gym.fetch_results(sim, True)
 
-        # Visualize motion and deformation
-        gym.step_graphics(sim)
-        gym.draw_viewer(viewer, sim, True)
-        gym.clear_lines(viewer)
-
-        # Render cameras.
-        gym.render_all_camera_sensors(sim)
-
-        gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
-        gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
-
-        # Get force.
-        force = extract_net_forces(gym, sim)
-
-        # Get mesh deformations.
-        nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
-
-        # Get contact points.
-        contact_points = extract_contact_points(gym, sim)
-
-        # Get camera sensing.
-        rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR)
-        depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
-        seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
-
-        if len(contact_points) > 0:
-            data_dict = {
-                "force": force,
-                "nodal_coords": nodal_coords,
-                "contact_points": contact_points,
-                "rgb": rgb_image,
-                "depth": depth_image,
-                "segmentation": seg_image,
-            }
-            mmint_utils.save_gzip_pickle(data_dict, os.path.join(out_dir, "data_%d.pkl.gzip" % t))
-
         # z = (np.cos(t / 100.0) * 0.025) + 0.075
         # draw_pose(gym, viewer, env, torch.Tensor([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]))
         # draw_pose(gym, viewer, env, torch.Tensor([0.0, 0.0, 0.3 + z, 0.0, 0.0, 0.0, 1.0]))
-        gym.set_actor_dof_position_targets(env, wrist, np.array([-0.15], dtype=np.float32))
+
+        wrist_pos, vel_pos = get_wrist_dof_info(gym, env, wrist)
+
+        if wrist_pos[0] > desired_z_pos:
+            gym.set_actor_dof_position_targets(env, wrist, np.array([(-desired_linear_velocity * dt) * t
+                                                                     ], dtype=np.float32))
+        else:
+            break
+
+    # Visualize motion and deformation
+    gym.step_graphics(sim)
+
+    if use_viewer:
+        gym.draw_viewer(viewer, sim, True)
+        gym.clear_lines(viewer)
+
+    # Render cameras.
+    gym.render_all_camera_sensors(sim)
+
+    gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
+    gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
+
+    # Get force.
+    force = extract_net_forces(gym, sim)
+
+    # Get mesh deformations.
+    nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
+
+    # Get contact points.
+    contact_points = extract_contact_points(gym, sim)
+
+    # Get camera sensing.
+    rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
+    depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
+    seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+
+    data_dict = {
+        "force": force,
+        "nodal_coords": nodal_coords,
+        "contact_points": contact_points,
+        "rgb": rgb_image,
+        "depth": depth_image,
+        "segmentation": seg_image,
+    }
+    mmint_utils.save_gzip_pickle(data_dict, os.path.join(out_dir, "data.pkl.gzip"))
+
+    # Clean up
+    if use_viewer:
+        gym.destroy_viewer(viewer)
+    gym.destroy_sim(sim)
+    print("Done!")
 
 
 if __name__ == '__main__':

@@ -21,15 +21,15 @@ def plot_points(points: np.ndarray, colors=None, size=0.04, vis=True):
         plt.show()
 
 
-def vis_data(base_mesh_fn, data_fn):
-    base_mesh: trimesh.Trimesh = trimesh.load(base_mesh_fn)
-    new_mesh = base_mesh.copy()
+def vis_data(data_fn):
+    # base_mesh: trimesh.Trimesh = trimesh.load(base_mesh_fn)
+    # new_mesh = base_mesh.copy()
     data_dict = mmint_utils.load_gzip_pickle(data_fn)
 
     nodal_coords = data_dict["nodal_coords"]
 
-    new_mesh.vertices = nodal_coords[0]
-    new_mesh.export("test.ply")
+    # new_mesh.vertices = nodal_coords[0]
+    # new_mesh.export("test.ply")
 
     contact_points = data_dict["contact_points"]
 
@@ -66,8 +66,8 @@ def vis_data(base_mesh_fn, data_fn):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="View simulated data.")
-    parser.add_argument("base_mesh", type=str)
+    # parser.add_argument("base_mesh", type=str)
     parser.add_argument("data_fn", type=str)
     args = parser.parse_args()
 
-    vis_data(args.base_mesh, args.data_fn)
+    vis_data(args.data_fn)
