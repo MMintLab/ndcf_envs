@@ -13,7 +13,7 @@
 
     <link name="wrist">
         <visual>
-            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+            <origin rpy="0.0 -0.6 0.0" xyz="0.0 0.0 0.0"/>
             <geometry>
                 <box size="0.1 0.1 0.1"/>
             </geometry>
@@ -33,21 +33,21 @@
     </joint>
 
     <link name="soft">
-        <visual>
-            <origin rpy="0 0 3.1415" xyz="0 0 -0.155"/>
-            <geometry>
-                <mesh filename="meshes/simplified_textured_v3.obj"/>
-            </geometry>
-        </visual>
-        <!--        <fem>-->
-        <!--            <origin rpy="0 0.6 3.1415" xyz="0.1 0 -0.155"/>-->
-        <!--            <density value="1000"/>-->
-        <!--            <youngs value="3e9"/>-->
-        <!--            <poissons value="0.34"/>-->
-        <!--            <damping value="0.0"/>-->
-        <!--            <attachDistance value="0.05"/>-->
-        <!--            <tetmesh filename="simplified_textured_v3.tet"/>-->
-        <!--        </fem>-->
+        <!--        <visual>-->
+        <!--            <origin rpy="0 0 3.1415" xyz="0 0 -0.155"/>-->
+        <!--            <geometry>-->
+        <!--                <mesh filename="meshes/simplified_textured_v3.obj"/>-->
+        <!--            </geometry>-->
+        <!--        </visual>-->
+        <fem>
+            <origin rpy="0 0.6 3.1415" xyz="0.1 0 -0.155"/>
+            <density value="1000"/>
+            <youngs value="3e9"/>
+            <poissons value="0.34"/>
+            <damping value="0.0"/>
+            <attachDistance value="0.05"/>
+            <tetmesh filename="simplified_textured_v3.tet"/>
+        </fem>
     </link>
 
 </robot>

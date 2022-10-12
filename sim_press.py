@@ -8,8 +8,10 @@ from isaacgym import gymtorch
 from isaacgym import gymutil
 import numpy as np
 from tqdm import trange
+import transforms3d as tf3d
 
 from mmint_utils.trajectory_planning import get_linear_trajectory
+import torch
 
 # Simulate pressing deformable tool into surface.
 # Some code borrowed from: https://sites.google.com/nvidia.com/tactiledata2
@@ -31,13 +33,14 @@ def main():
     # Load assets.
     asset_options = set_asset_options()
     wrist_urdf_dir = "urdf"
-    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['wrist'], asset_options, gravity=True)[0]
+    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['wrist_new'], asset_options, fix=True, gravity=False)[
+        0]
 
     # Create scene.
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3000, 20], 0.03)
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3000, 50])
 
     # Create viewer.
     if use_viewer:
@@ -86,7 +89,7 @@ def create_sim(gym):
     sim_params = gymapi.SimParams()
     sim_params.dt = 1.0e-3  # Control frequency
     sim_params.substeps = 1  # Physics simulation frequency (multiplier)
-    sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.8)
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
     sim_params.up_axis = gymapi.UpAxis.UP_AXIS_Z
     sim_params.use_gpu_pipeline = False
 
@@ -156,7 +159,7 @@ def create_viewer(gym, sim):
     camera_props.height = 1080
     viewer = gym.create_viewer(sim, camera_props)
     camera_pos = gymapi.Vec3(1.5, -2.0, 2.0)
-    camera_target = gymapi.Vec3(0.0, 0.0, 0.0)
+    camera_target = gymapi.Vec3(0.0, 0.0, 0.4)
     gym.viewer_camera_look_at(viewer, None, camera_pos, camera_target)
 
     axes_geom = gymutil.AxesGeometry(0.1)
@@ -164,15 +167,15 @@ def create_viewer(gym, sim):
     return viewer, axes_geom
 
 
-def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0], max_vel=0.03):
+def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0]):
     """
     Set wrist control properties.
     """
     wrist_dof_props = gym.get_actor_dof_properties(env, wrist)
-    wrist_dof_props['driveMode'][0] = gymapi.DOF_MODE_POS
-    wrist_dof_props['stiffness'][0] = pd_gains[0]
-    wrist_dof_props['damping'][0] = pd_gains[1]
-    wrist_dof_props['velocity'][0] = max_vel
+    for dof_idx in range(wrist_dof_props.shape[0]):
+        wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
+        wrist_dof_props['stiffness'][dof_idx] = pd_gains[0]
+        wrist_dof_props['damping'][dof_idx] = pd_gains[1]
     gym.set_actor_dof_properties(env, wrist, wrist_dof_props)
 
 
@@ -236,14 +239,47 @@ def extract_nodal_coords(gym, sim, particle_states):
     return nodal_coords
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
-    # gym.set_joint_target_position(env, gym.get_joint_handle(env, "wrist", "world_to_wrist"), 0.3)
+def reset_joint_state(gym, env, wrist, joint_state):
+    num_dof = gym.get_actor_dof_count(env, wrist)
+    dof_states = gym.get_actor_dof_states(env, wrist, gymapi.STATE_ALL)
+    for dof_idx in range(num_dof):
+        dof_states["pos"][dof_idx] = joint_state[dof_idx]
+        dof_states["vel"][dof_idx] = 0.0
+    gym.set_actor_dof_states(env, wrist, dof_states, gymapi.STATE_ALL)
 
+
+def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
+    """
+    Reset wrist to starting pose (including joint position set points).
+
+    We also reset the particle state of the deformable to avoid bad initialization.
+
+    Joint state here is pose of wrist as [pos, rxyz euler angles].
+    """
+    reset_joint_state(gym, env, wrist, joint_state)
+    gym.set_actor_dof_position_targets(env, wrist, joint_state)
+
+    # Transform particle positions to new pose.
+    tf_matrix = np.eye(4)
+    tf_matrix[:3, 3] = joint_state[:3]
+    tf_matrix[:3, :3] = tf3d.euler.euler2mat(joint_state[3], joint_state[4], joint_state[5], axes='rxyz')
+
+    starting_points = np.ones([tool_state_init.shape[0], 4])
+    starting_points[:, :3] = tool_state_init[:, :3]
+    tool_state_init[:, :3] = torch.from_numpy((tf_matrix @ starting_points.T).T[:, :3]).to("cuda:0")  # TODO: Replace.
+    gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init))
+
+
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
     out_dir = "out/test_ycb/"
 
     # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
+    tool_state_init = copy.deepcopy(particle_state_tensor)
+
+    # Reset wrist state.
+    reset_wrist(gym, sim, env, wrist, tool_state_init, [0.0, 0.0, 0.4, 0.0, -0.6, 0.0])
 
     t = 0
     desired_linear_velocity = 0.02  # m/s
@@ -251,6 +287,10 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
     dt = gym.get_sim_params(sim).dt
 
     images = []
+
+    # gym.step_graphics(sim)
+    # for _ in range(1000):
+    #     gym.draw_viewer(viewer, sim, True)
 
     # while not gym.query_viewer_has_closed(viewer):
     while True:
@@ -260,21 +300,19 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
         gym.simulate(sim)
         gym.fetch_results(sim, True)
 
-        # z = (np.cos(t / 100.0) * 0.025) + 0.075
-        # draw_pose(gym, viewer, env, torch.Tensor([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]))
-        # draw_pose(gym, viewer, env, torch.Tensor([0.0, 0.0, 0.3 + z, 0.0, 0.0, 0.0, 1.0]))
+        # wrist_pos, vel_pos = get_wrist_dof_info(gym, env, wrist)
 
-        wrist_pos, vel_pos = get_wrist_dof_info(gym, env, wrist)
-
-        if wrist_pos[0] > desired_z_pos:
-            gym.set_actor_dof_position_targets(env, wrist, np.array([(-desired_linear_velocity * dt) * t
-                                                                     ], dtype=np.float32))
-        else:
-            break
+        # if wrist_pos[0] > desired_z_pos:
+        # gym.set_actor_dof_position_targets(env, wrist,
+        #                                    np.array([(-desired_linear_velocity * dt) * t, 0.0, 0.0, 0.0],
+        #                                             dtype=np.float32))
+        # else:
+        #     break
 
         # Visualize motion and deformation
         if use_viewer:
             gym.step_graphics(sim)
+            # for _ in range(1000):
             gym.draw_viewer(viewer, sim, True)
             gym.clear_lines(viewer)
 
