@@ -33,8 +33,7 @@ def main():
     # Load assets.
     asset_options = set_asset_options()
     wrist_urdf_dir = "urdf"
-    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['wrist_new'], asset_options, fix=True, gravity=False)[
-        0]
+    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['wrist'], asset_options, fix=True, gravity=False)[0]
 
     # Create scene.
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
