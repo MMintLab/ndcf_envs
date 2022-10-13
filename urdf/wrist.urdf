@@ -110,24 +110,14 @@
     </joint>
 
     <link name="soft">
-        <!--        <inertial>-->
-        <!--            <mass value="0.001"/>-->
-        <!--            <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0.0" ixz="0.0" iyz="0.0"/>-->
-        <!--        </inertial>-->
-        <!--        <visual>-->
-        <!--            <origin rpy="0 0 3.1415" xyz="0 0 -0.155"/>-->
-        <!--            <geometry>-->
-        <!--                <mesh filename="meshes/simplified_textured_v3.obj"/>-->
-        <!--            </geometry>-->
-        <!--        </visual>-->
         <fem>
-            <origin rpy="0 0 3.1415" xyz="0 0 -0.155"/>
+            <origin rpy="0 0 0" xyz="0 0 0"/>
             <density value="1000"/>
             <youngs value="3e9"/>
             <poissons value="0.34"/>
             <damping value="0.0"/>
             <attachDistance value="0.05"/>
-            <tetmesh filename="simplified_textured_v3.tet"/>
+            <tetmesh filename="meshes/spatula_2_v3.tet"/>
         </fem>
     </link>
 

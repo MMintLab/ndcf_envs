@@ -247,6 +247,30 @@ def reset_joint_state(gym, env, wrist, joint_state):
     gym.set_actor_dof_states(env, wrist, dof_states, gymapi.STATE_ALL)
 
 
+def transform_points(points, transform, axes='rxyz'):
+    """
+    Transform given points.
+
+    If 6 terms, assumed euler angles. Uses axes arg to interpret.
+    If 7 terms, assumed wxyz quaternion.
+    """
+    if type(points) == torch.Tensor:
+        points = points.cpu().numpy()
+
+    # Build transform matrix.
+    tf_matrix = np.eye(4)
+    tf_matrix[:3, 3] = transform[:3]
+    if len(transform) == 6:
+        tf_matrix[:3, :3] = tf3d.euler.euler2mat(transform[3], transform[4], transform[5], axes=axes)
+    else:
+        tf_matrix[:3, :3] = tf3d.quaternions.quat2mat(transform[3:])
+
+    # Perform transformation.
+    points_tf = np.ones([points.shape[0], 4], dtype=points.dtype)
+    points_tf[:, :3] = points
+    return (tf_matrix @ points_tf.T).T[:, :3]
+
+
 def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
     """
     Reset wrist to starting pose (including joint position set points).
@@ -259,13 +283,9 @@ def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
     gym.set_actor_dof_position_targets(env, wrist, joint_state)
 
     # Transform particle positions to new pose.
-    tf_matrix = np.eye(4)
-    tf_matrix[:3, 3] = joint_state[:3]
-    tf_matrix[:3, :3] = tf3d.euler.euler2mat(joint_state[3], joint_state[4], joint_state[5], axes='rxyz')
+    tool_state_init[:, :3] = torch.from_numpy(transform_points(tool_state_init[:, :3], joint_state)).to("cuda:0")
 
-    starting_points = np.ones([tool_state_init.shape[0], 4])
-    starting_points[:, :3] = tool_state_init[:, :3]
-    tool_state_init[:, :3] = torch.from_numpy((tf_matrix @ starting_points.T).T[:, :3]).to("cuda:0")  # TODO: Replace.
+    # return points, tf_matrix
     gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init))
 
 
@@ -281,17 +301,6 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
     reset_wrist(gym, sim, env, wrist, tool_state_init, [0.0, 0.0, 0.4, 0.0, -0.6, 0.0])
 
     t = 0
-    desired_linear_velocity = 0.02  # m/s
-    desired_z_pos = -0.15
-    dt = gym.get_sim_params(sim).dt
-
-    images = []
-
-    # gym.step_graphics(sim)
-    # for _ in range(1000):
-    #     gym.draw_viewer(viewer, sim, True)
-
-    # while not gym.query_viewer_has_closed(viewer):
     while True:
         t += 1
 
