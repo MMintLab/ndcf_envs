@@ -20,10 +20,15 @@ from mmint_utils.images2gif import images2gif
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     args = parser.parse_args()
 
     use_viewer = args.viewer
+    out = args.out
+
+    if out is not None:
+        mmint_utils.make_dir(out)
 
     gym = gymapi.acquire_gym()
 
@@ -39,7 +44,7 @@ def main():
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3000, 50])
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [30000, 50])
 
     # Create viewer.
     if use_viewer:
@@ -47,7 +52,7 @@ def main():
     else:
         viewer = axes = None
 
-    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, axes, use_viewer)
+    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, axes, use_viewer, out)
 
 
 def create_scene(gym, sim, wrist_asset_handle):
@@ -289,48 +294,21 @@ def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
     gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init))
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
-    out_dir = "out/test_ycb/"
+def reset_wrist_offset(gym, sim, env, wrist, tool_state_init, orientation, offset):
+    # Determine position for tool.
+    start_orientation = [0, 0, 0, orientation[0], orientation[1], orientation[2]]
+    z_offset = offset - min(transform_points(tool_state_init[:, :3], start_orientation)[:, 2])
 
-    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
-    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
-    gym.refresh_particle_state_tensor(sim)
-    tool_state_init = copy.deepcopy(particle_state_tensor)
+    # Send to pose.
+    pose = [0, 0, z_offset, orientation[0], orientation[1], orientation[2]]
+    reset_wrist(gym, sim, env, wrist, tool_state_init, pose)
 
-    # Reset wrist state.
-    reset_wrist(gym, sim, env, wrist, tool_state_init, [0.0, 0.0, 0.4, 0.0, -0.6, 0.0])
+    return z_offset
 
-    t = 0
-    while True:
-        t += 1
 
-        # Step simulator.
-        gym.simulate(sim)
-        gym.fetch_results(sim, True)
-
-        # wrist_pos, vel_pos = get_wrist_dof_info(gym, env, wrist)
-
-        # if wrist_pos[0] > desired_z_pos:
-        # gym.set_actor_dof_position_targets(env, wrist,
-        #                                    np.array([(-desired_linear_velocity * dt) * t, 0.0, 0.0, 0.0],
-        #                                             dtype=np.float32))
-        # else:
-        #     break
-
-        # Visualize motion and deformation
-        if use_viewer:
-            gym.step_graphics(sim)
-            # for _ in range(1000):
-            gym.draw_viewer(viewer, sim, True)
-            gym.clear_lines(viewer)
-
-    # Visualize motion and deformation
-    if use_viewer:
-        gym.step_graphics(sim)
-        gym.draw_viewer(viewer, sim, True)
-        gym.clear_lines(viewer)
-
+def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     # Render cameras.
+    gym.step_graphics(sim)
     gym.render_all_camera_sensors(sim)
 
     gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
@@ -350,15 +328,79 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer):
     depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
     seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
 
-    data_dict = {
+    # Get wrist pose.
+    wrist_pose, _ = get_wrist_dof_info(gym, env, wrist)
+
+    results_dict = {
         "force": force,
         "nodal_coords": nodal_coords,
         "contact_points": contact_points,
         "rgb": rgb_image,
         "depth": depth_image,
         "segmentation": seg_image,
+        "wrist_pose": wrist_pose,
     }
-    mmint_utils.save_gzip_pickle(data_dict, os.path.join(out_dir, "data.pkl.gzip"))
+    return results_dict
+
+
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir):
+    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
+    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
+    gym.refresh_particle_state_tensor(sim)
+    tool_state_init = copy.deepcopy(particle_state_tensor)
+
+    z_offset = 0.01
+    indent_distance = 0.01
+    lowering_speed = -0.2  # m/s
+    dt = gym.get_sim_params(sim).dt
+    configs = [
+        # [0.0, -0.8, 0.0],
+        [0.3, -0.8, 0.0],
+        [-0.3, -0.8, 0.0],
+    ]
+
+    for config_idx, config in enumerate(configs):
+        # Reset to new config.
+        start_z = reset_wrist_offset(gym, sim, env, wrist, tool_state_init, config, z_offset)
+        goal_z = start_z - z_offset - indent_distance
+
+        # Lower until in contact.
+        t = 0
+        while True:
+            t += 1
+            # Step simulator.
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+
+            # Visualize motion and deformation
+            if use_viewer:
+                gym.step_graphics(sim)
+                gym.draw_viewer(viewer, sim, True)
+                gym.clear_lines(viewer)
+
+            curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
+
+            if t % 1000 == 0:
+                print("Curr z: %d" % curr_pos[2])
+
+            if curr_pos[2] < goal_z:
+                break
+
+            curr_pos[2] += lowering_speed * dt
+            gym.set_actor_dof_position_targets(env, wrist, curr_pos)
+
+        # Let simulation settle a bit.
+        for _ in range(100):
+            # Step simulator.
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+
+        # Get results.
+        results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
+
+        # Save results.
+        if out_dir is not None:
+            mmint_utils.save_gzip_pickle(results_dict, os.path.join(out_dir, "config_%d.pkl.gzip" % config_idx))
 
     # Clean up
     if use_viewer:
