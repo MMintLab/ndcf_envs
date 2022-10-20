@@ -37,14 +37,15 @@ def main():
 
     # Load assets.
     asset_options = set_asset_options()
-    wrist_urdf_dir = "urdf"
-    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['wrist'], asset_options, fix=True, gravity=False)[0]
+    wrist_urdf_dir = "assets"
+    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['urdf/wrist'], asset_options, fix=True, gravity=False)[
+        0]
 
     # Create scene.
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [30000, 50])
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3e9, 50])
 
     # Create viewer.
     if use_viewer:
@@ -354,9 +355,8 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
     configs = [
-        # [0.0, -0.8, 0.0],
-        [0.3, -0.8, 0.0],
-        [-0.3, -0.8, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, -0.3, 0.0],
     ]
 
     for config_idx, config in enumerate(configs):
