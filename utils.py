@@ -1,6 +1,7 @@
 import open3d as o3d
 import numpy as np
 import transforms3d as tf3d
+import trimesh
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -41,3 +42,23 @@ def pose_to_matrix(pose, axes="sxyz"):
         matrix[:3, :3] = tf3d.quaternions.quat2mat(pose[3:])
 
     return matrix
+
+
+def tetrahedral_to_surface_triangles(points, tetramesh):
+    surface = set()
+    for tetra in tetramesh.cells_dict["tetra"]:
+        for face in [
+            [tetra[0], tetra[1], tetra[2]],
+            [tetra[0], tetra[2], tetra[3]],
+            [tetra[0], tetra[1], tetra[3]],
+            [tetra[1], tetra[2], tetra[3]]
+        ]:
+            # Sort face.
+            sorted_face = tuple(np.sort(face))
+            if sorted_face in surface:
+                surface.remove(sorted_face)
+            else:
+                surface.add(sorted_face)
+
+    triangle_mesh = trimesh.Trimesh(points, list(surface))
+    return triangle_mesh

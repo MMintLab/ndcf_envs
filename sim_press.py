@@ -163,7 +163,7 @@ def create_viewer(gym, sim):
     camera_props.height = 1080
     viewer = gym.create_viewer(sim, camera_props)
     camera_pos = gymapi.Vec3(1.5, -2.0, 2.0)
-    camera_target = gymapi.Vec3(0.0, 0.0, 0.4)
+    camera_target = gymapi.Vec3(0.0, 0.0, 0.0)
     gym.viewer_camera_look_at(viewer, None, camera_pos, camera_target)
 
     axes_geom = gymutil.AxesGeometry(0.1)
@@ -202,16 +202,18 @@ def extract_net_forces(gym, sim):
     contacts = gym.get_soft_contacts(sim)
     num_envs = gym.get_env_count(sim)
     net_force_vecs = np.zeros((num_envs, 3))
+    contact_forces = []
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
         env_index = rigid_body_index // 3
         force_vec = contact_force_mag * contact_normal
+        contact_forces.append(force_vec)
         net_force_vecs[env_index] += force_vec
     net_force_vecs = -net_force_vecs
 
-    return net_force_vecs
+    return net_force_vecs, contact_forces
 
 
 def extract_contact_points(gym, sim):
@@ -315,7 +317,7 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
 
     # Get force.
-    force = extract_net_forces(gym, sim)
+    force, contact_forces = extract_net_forces(gym, sim)
 
     # Get mesh deformations.
     nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
@@ -335,6 +337,7 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
         "force": force,
         "nodal_coords": nodal_coords,
         "contact_points": contact_points,
+        "contact_forces": contact_forces,
         "rgb": rgb_image,
         "depth": depth_image,
         "segmentation": seg_image,
