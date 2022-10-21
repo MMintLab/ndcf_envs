@@ -144,7 +144,6 @@ def load_assets(gym, sim, base_dir, filenames, options, fix=True, gravity=False)
     """
     Load assets from specified URDF files.
     """
-
     options.fix_base_link = True if fix else False
     options.disable_gravity = True if not gravity else False
     handles = []
@@ -361,7 +360,8 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
 
     for config_idx, config in enumerate(configs):
         # Reset to new config.
-        start_z = reset_wrist_offset(gym, sim, env, wrist, tool_state_init, config, z_offset)
+        tool_state_init_ = copy.deepcopy(tool_state_init)
+        start_z = reset_wrist_offset(gym, sim, env, wrist, tool_state_init_, config, z_offset)
         goal_z = start_z - z_offset - indent_distance
 
         # Lower until in contact.

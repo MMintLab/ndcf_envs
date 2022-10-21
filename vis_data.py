@@ -4,8 +4,6 @@ import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
 
-import trimesh
-
 
 def plot_points(points: np.ndarray, colors=None, size=0.04, vis=True):
     fig = plt.figure()
