@@ -356,10 +356,8 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
     indent_distance = 0.01
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
-    configs = [
-        [0.0, 0.0, 0.0],
-        [0.0, -0.3, 0.0],
-    ]
+    n = 10
+    configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([n, 3]) * np.array([0.6, 0.6, 0.6]))
 
     for config_idx, config in enumerate(configs):
         # Reset to new config.

@@ -1,3 +1,5 @@
+import os
+
 import mmint_utils
 import argparse
 import numpy as np
@@ -72,8 +74,19 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process sim data.")
-    parser.add_argument("data_fn", type=str, help="Data file.")
+    parser.add_argument("data_dir", type=str, help="Data dir.")
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
+    parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
+    parser.set_defaults(vis=False)
     args = parser.parse_args()
 
-    process_sim_data_example(args.data_fn, args.base_tetra_mesh_fn, None, True)
+    # Load data fns.
+    data_dir = args.data_dir
+    data_fns = [f for f in os.listdir(data_dir) if "config_" in f]
+    data_fns = np.sort(data_fns)
+
+    for data_idx in range(len(data_fns)):
+        data_fn = os.path.join(data_dir, data_fns[data_idx])
+        out_fn = os.path.join(data_dir, "out_%d.pkl.gzip" % data_idx)
+
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, out_fn, vis=args.vis)

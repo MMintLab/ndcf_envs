@@ -136,7 +136,7 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n: int = 10000):
     # Compute SDF to surface.
     query_points = o3d.core.Tensor(query_points_np, dtype=o3d.core.Dtype.Float32)
     signed_distance = scene.compute_signed_distance(query_points)
-    signed_distance_np = np.asarray(signed_distance)
+    signed_distance_np = signed_distance.numpy()
 
     return query_points_np, signed_distance_np
 
