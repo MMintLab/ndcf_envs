@@ -67,18 +67,3 @@ o3d.visualization.draw_geometries([o3d.geometry.LineSet.create_from_triangle_mes
                                    o3d.geometry.PointCloud(
                                        o3d.utility.Vector3dVector(query_points_np[np.asarray(occ) < 0.5]))
                                    ])
-
-xyz_range = np.linspace(np.array(tri_mesh.get_min_bound()) - 0.05, np.array(tri_mesh.get_max_bound()) + 0.05, num=32)
-
-# query_points is a [32,32,32,3] array ..
-query_points = np.stack(np.meshgrid(*xyz_range.T), axis=-1).astype(np.float32)
-
-# signed distance is a [32,32,32] array
-signed_distance = scene.compute_distance(query_points)
-occupancy = scene.compute_occupancy(query_points)
-
-plt.imshow(signed_distance.numpy()[:, :, 15])
-plt.show()
-
-plt.imshow(occupancy.numpy()[:, :, 15])
-plt.show()

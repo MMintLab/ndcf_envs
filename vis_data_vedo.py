@@ -46,12 +46,11 @@ def vis_data(data_fn, base_tetra_mesh_fn, base_triangle_mesh_fn):
     vedo_deformed_mesh = TetMesh([deformed_vertices, base_tetra_mesh.cells_dict["tetra"]]).tomesh()
 
     # Build surface triangle mesh.
-    triangle_mesh = utils.tetrahedral_to_surface_triangles(deformed_vertices, base_tetra_mesh)
-    vedo_surface_mesh = Mesh([triangle_mesh.vertices, triangle_mesh.faces])
-    vedo_surface_mesh.fill_holes()
-    write(vedo_surface_mesh, "test.obj")
-    vedo_surface_mesh_alpha = Mesh([triangle_mesh.vertices, triangle_mesh.faces], alpha=0.2)
-    vedo_surface_points = Points(triangle_mesh.vertices)
+    tri_verts, tri_triangles = utils.tetrahedral_to_surface_triangles(deformed_vertices,
+                                                                      base_tetra_mesh.cells_dict["tetra"])
+    vedo_surface_mesh = Mesh([tri_verts, tri_triangles])
+    vedo_surface_mesh_alpha = Mesh([tri_verts, tri_triangles], alpha=0.2)
+    vedo_surface_points = Points(tri_verts)
 
     # Get signed distance values.
     # query_points, sdf = get_sdf_values(triangle_mesh)
