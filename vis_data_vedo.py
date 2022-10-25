@@ -3,76 +3,47 @@ import meshio
 import mmint_utils
 import argparse
 import numpy as np
-import trimesh
-import trimesh.proximity
-import matplotlib.colors
-
+import open3d as o3d
 import utils
 
 
-def draw_axes(scale=0.02):
-    axes = [
-        Arrow(end_pt=[scale, 0, 0], c="r"),
-        Arrow(end_pt=[0, scale, 0], c="g"),
-        Arrow(end_pt=[0, 0, scale], c="b"),
-    ]
-    return axes
-
-
-def get_sdf_values(mesh: trimesh.Trimesh, n: int = 10000):
-    bounds = np.array(mesh.bounds)
-    bounds[0] -= 0.1
-    bounds[1] += 0.1
-
-    points = bounds[0] + (np.random.random((n, 3)) * (bounds[1] - bounds[0]))
-
-    sdf = -trimesh.proximity.signed_distance(mesh, points)  # Negative b/c trimesh uses negative outside mesh.
-    return points, sdf
-
-
-def vis_data(data_fn, base_tetra_mesh_fn, base_triangle_mesh_fn):
+def vis_data(data_fn, base_tetra_mesh_fn):
     data_dict = mmint_utils.load_gzip_pickle(data_fn)
 
-    # Transform deformed object points to wrist frame.
+    # Get wrist pose.
     wrist_pose = data_dict["wrist_pose"]
-    deformed_vertices = utils.transform_pointcloud(data_dict["nodal_coords"][0],
-                                                   np.linalg.inv(utils.pose_to_matrix(wrist_pose)))
+    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="sxyz")
+    wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
 
-    # Load base mesh and build tetra mesh of the undeformed and deformed mesh.
-    base_tetra_mesh = meshio.read(base_tetra_mesh_fn)
-    # base_tetra_mesh = utils.load_tetmesh(base_tetra_mesh_fn)
-    base_triangle_mesh = trimesh.load(base_triangle_mesh_fn)
-    vedo_mesh = TetMesh([base_tetra_mesh.points, base_tetra_mesh.cells_dict["tetra"]]).tomesh()
-    vedo_deformed_mesh = TetMesh([deformed_vertices, base_tetra_mesh.cells_dict["tetra"]]).tomesh()
+    # Load deformed object points.
+    def_vert_w = data_dict["nodal_coords"][0]
+    def_vert = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
 
-    # Build surface triangle mesh.
-    tri_verts, tri_triangles = utils.tetrahedral_to_surface_triangles(deformed_vertices,
-                                                                      base_tetra_mesh.cells_dict["tetra"])
-    vedo_surface_mesh = Mesh([tri_verts, tri_triangles])
-    vedo_surface_mesh_alpha = Mesh([tri_verts, tri_triangles], alpha=0.2)
-    vedo_surface_points = Points(tri_verts)
+    # Load base tetra mesh of the undeformed mesh.
+    tet_vert, tet_tetra = utils.load_tetmesh(base_tetra_mesh_fn)
+    tet_vedo = TetMesh([tet_vert, tet_tetra]).tomesh()
+    tet_def_vedo = TetMesh([def_vert, tet_tetra]).tomesh()
 
-    # Get signed distance values.
-    # query_points, sdf = get_sdf_values(triangle_mesh)
-    # vedo_sdf = Points(query_points[sdf <= 0.0])
+    # Convert tetra mesh to triangle mesh. Note, we use the deformed vertices.
+    tri_vert, tri_triangles = utils.tetrahedral_to_surface_triangles(def_vert, tet_tetra)
+    tri_vedo = Mesh([tri_vert, tri_triangles])
+    tri_vedo_alpha = Mesh([tri_vert, tri_triangles], alpha=0.2)
 
-    # Build contact pointcloud.
+    # Load contact point cloud.
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
-    contact_points = utils.transform_pointcloud(contact_points_w,
-                                                np.linalg.inv(utils.pose_to_matrix(wrist_pose)))
+    contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
     vedo_contact_points = Points(contact_points, c="r")
 
-    # Build contact forces.
-    contact_forces = np.array(data_dict["contact_forces"]) * 0.001
-    force_pts_end_w = contact_points_w + contact_forces
-    force_pts_end = utils.transform_pointcloud(force_pts_end_w, np.linalg.inv(utils.pose_to_matrix(wrist_pose)))
-    vedo_contact_forces = Arrows(contact_points, force_pts_end, c="r")
+    # Load contact forces.
+    contact_forces_w = np.array(data_dict["contact_forces"])
+    contact_forces = utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
+    vedo_contact_forces = Arrows(contact_points, contact_points + (0.001 * contact_forces))
 
     plt = Plotter(shape=(2, 2))
-    plt.at(0).show(vedo_mesh, draw_axes(), "Undeformed")
-    plt.at(1).show(vedo_deformed_mesh, vedo_contact_points, draw_axes(), "Deformed (Tet)")
-    plt.at(2).show(vedo_surface_mesh, draw_axes(), "Deformed (Tri)")
-    plt.at(3).show(vedo_surface_mesh_alpha, vedo_contact_points, vedo_contact_forces, draw_axes(), "Contact Points")
+    plt.at(0).show(tet_vedo, utils.draw_axes(), "Undeformed")
+    plt.at(1).show(tet_def_vedo, vedo_contact_points, utils.draw_axes(), "Deformed (Tet)")
+    plt.at(2).show(tri_vedo, utils.draw_axes(), "Deformed (Tri)")
+    plt.at(3).show(tri_vedo_alpha, vedo_contact_points, vedo_contact_forces, utils.draw_axes(), "Contact Points")
     plt.interactive().close()
 
 
@@ -80,7 +51,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Vis data (vedo).")
     parser.add_argument("data_fn", type=str)
     parser.add_argument("base_tetra_mesh", type=str)
-    parser.add_argument("base_triangle_mesh", type=str)
     args = parser.parse_args()
 
-    vis_data(args.data_fn, args.base_tetra_mesh, args.base_triangle_mesh)
+    vis_data(args.data_fn, args.base_tetra_mesh)
