@@ -2,7 +2,7 @@ import open3d as o3d
 import numpy as np
 import transforms3d as tf3d
 import trimesh
-from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows
+from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, Line
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -45,31 +45,10 @@ def pose_to_matrix(pose, axes="sxyz"):
     return matrix
 
 
-def tetrahedral_to_surface_triangles(points, tetramesh):
-    # surface_points_z = np.logical_or(tetramesh.points[:, 2] == 0, tetramesh.points[:, 2] == -0.1)
-    # surface_points_x = np.logical_or(tetramesh.points[:, 0] == -0.05, tetramesh.points[:, 0] == 0.05)
-    # surface_points_y = np.logical_or(tetramesh.points[:, 1] == -0.05, tetramesh.points[:, 1] == 0.05)
-    # surface_points = np.logical_or(np.logical_or(surface_points_x, surface_points_y), surface_points_z)
-    #
-    # vedo_surface_points = Points(tetramesh.points[surface_points])
-    #
-    # surface_triangles = []
-    # for tetra in tetramesh.cells_dict["tetra"]:
-    #     for face in [
-    #         [tetra[0], tetra[1], tetra[2]],
-    #         [tetra[0], tetra[2], tetra[3]],
-    #         [tetra[0], tetra[1], tetra[3]],
-    #         [tetra[1], tetra[2], tetra[3]]
-    #     ]:
-    #         if (surface_points[face[0]] and surface_points[face[1]]) and surface_points[face[2]]:
-    #             surface_triangles.append(face)
-    #
-    # # plt = Plotter(shape=(1, 1))
-    # # plt.at(0).show(vedo_surface_points)
-    # # plt.interactive().close()
-
+def tetrahedral_to_surface_triangles(verts, tetras):
     surface = set()
-    for tetra in tetramesh.cells_dict["tetra"]:
+    all_triangles = []
+    for tetra in tetras:
         for face in [
             [tetra[0], tetra[1], tetra[2]],
             [tetra[0], tetra[2], tetra[3]],
@@ -78,13 +57,48 @@ def tetrahedral_to_surface_triangles(points, tetramesh):
         ]:
             # Sort face.
             sorted_face = tuple(np.sort(face))
+            all_triangles.append(face)
             if sorted_face in surface:
                 surface.remove(sorted_face)
             else:
                 surface.add(sorted_face)
 
-    triangle_mesh = trimesh.Trimesh(points, list(surface))
-    return triangle_mesh
+    points = []
+    lines = []
+    for tri in list(surface):
+        points.extend([verts[tri[0]], verts[tri[1]], verts[tri[2]]])
+        lines.extend([
+            Line(verts[tri[0]], verts[tri[1]]),
+            Line(verts[tri[0]], verts[tri[2]]),
+            Line(verts[tri[2]], verts[tri[1]]),
+        ])
+    vedo_points = Points(points)
+
+    # plt = Plotter(shape=(1, 1))
+    # plt.at(0).show(vedo_points, lines)
+    # plt.interactive().close()
+
+    # Pull out only the surface points.
+    tri_mesh_points = []
+    point_idx_map = {}
+    tri_mesh_triangles = []
+    for tri in list(surface):
+        for pt_idx in tri:
+            if pt_idx not in point_idx_map:
+                point = verts[pt_idx]
+                new_pt_idx = len(tri_mesh_points)
+                tri_mesh_points.append(point)
+                point_idx_map[pt_idx] = new_pt_idx
+        tri_mesh_triangles.append(
+            [point_idx_map[tri[0]], point_idx_map[tri[1]], point_idx_map[tri[2]]]
+        )
+
+    # vedo_mesh = Mesh([tri_mesh_points, tri_mesh_triangles])
+    # plt = Plotter(shape=(1, 1))
+    # plt.at(0).show(vedo_mesh)
+    # plt.interactive().close()
+
+    return tri_mesh_points, tri_mesh_triangles
 
 
 def tet_to_triangle(vertices, tet):

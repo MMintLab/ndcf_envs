@@ -1,4 +1,4 @@
-from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows
+from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, write
 import meshio
 import mmint_utils
 import argparse
@@ -48,6 +48,8 @@ def vis_data(data_fn, base_tetra_mesh_fn, base_triangle_mesh_fn):
     # Build surface triangle mesh.
     triangle_mesh = utils.tetrahedral_to_surface_triangles(deformed_vertices, base_tetra_mesh)
     vedo_surface_mesh = Mesh([triangle_mesh.vertices, triangle_mesh.faces])
+    vedo_surface_mesh.fill_holes()
+    write(vedo_surface_mesh, "test.obj")
     vedo_surface_mesh_alpha = Mesh([triangle_mesh.vertices, triangle_mesh.faces], alpha=0.2)
     vedo_surface_points = Points(triangle_mesh.vertices)
 
