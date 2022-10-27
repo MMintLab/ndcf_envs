@@ -116,8 +116,8 @@
     <link name="soft">
         <fem>
             <origin rpy="0 0 0" xyz="0 0 0"/>
-            <density value="1000"/>
-            <youngs value="1e6"/>
+            <density value="100"/>
+            <youngs value="1e5"/>
             <poissons value="0.1"/>
             <damping value="0.0"/>
             <attachDistance value="0.05"/>

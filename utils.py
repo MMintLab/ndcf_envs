@@ -1,8 +1,9 @@
 import open3d as o3d
 import numpy as np
 import transforms3d as tf3d
+from vedo import Arrow
+from scipy.spatial import KDTree
 import trimesh
-from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, Line
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -142,9 +143,43 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n: int = 10000):
 
 
 def draw_axes(scale=0.02):
+    """
+    Helper to draw axes in vedo.
+    """
     axes = [
         Arrow(end_pt=[scale, 0, 0], c="r"),
         Arrow(end_pt=[0, scale, 0], c="g"),
         Arrow(end_pt=[0, 0, scale], c="b"),
     ]
     return axes
+
+
+def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
+    """
+    Given the triangle mesh of the tool and the contact points (which are all vertices of the tool mesh),
+    find the corresponding triangles in the mesh.
+    """
+    vertices = tri_mesh.vertices
+    triangles = tri_mesh.triangles
+    contact_vertices = np.zeros(len(vertices), dtype=bool)
+
+    # Determine the vertices in contact.
+    kd_tree = KDTree(vertices)
+    _, contact_points_vert_idcs = kd_tree.query(contact_points)
+    contact_vertices[contact_points_vert_idcs] = True
+
+    # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
+    contact_triangles = np.array(
+        [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
+    return contact_vertices, contact_triangles
+
+
+def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
+                                      n: int = 1000):
+    """
+    Sample points on the surface of the given mesh that are NOT in contact.
+    """
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    triangle_weights = [1.0 if not c else 0.0 for c in contact_triangles]
+    surface_points, _ = mesh.sample(n, return_index=True, face_weight=triangle_weights)
+    return surface_points

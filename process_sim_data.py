@@ -4,7 +4,7 @@ import mmint_utils
 import argparse
 import numpy as np
 import open3d as o3d
-from vedo import Plotter, Points, Arrows
+from vedo import Plotter, Points, Arrows, Mesh
 
 import utils
 
@@ -54,11 +54,36 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     # Get SDF values near object.
     query_points, sdf = utils.get_sdf_values(tri_mesh, n=50000)
 
+    # Get samples on the surface of the object.
+    contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh, contact_points)
+    surface_points = utils.sample_non_contact_surface_points(tri_mesh, contact_triangles, n=1000)
+
+    # Some visualization for contact verts/tris.
+    if vis:
+        tri_mesh_vedo = Mesh([tri_vert, tri_triangles])
+        contact_points_vedo = Points(contact_points, c="r")
+        tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
+        tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
+        tri_mesh_vedo_contact.celldata["CellIndividualColors"] = np.array(tri_colors).astype(np.uint8)
+        tri_mesh_vedo_contact.celldata.select("CellIndividualColors")
+        surface_points_vedo = Points(surface_points, c="b")
+
+        plt = Plotter(shape=(1, 2))
+        plt.at(0).show(contact_points_vedo, tri_mesh_vedo, "Contact Points")
+        plt.at(1).show(contact_points_vedo, tri_mesh_vedo_contact, surface_points_vedo, "Contact Vertices")
+        plt.interactive().close()
+
     # Build dataset.
-    dataset_query_points = np.concatenate([query_points, contact_points])
-    dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points))])
-    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool)])
-    dataset_forces = np.concatenate([np.zeros([len(sdf), 3], dtype=float), contact_forces])
+    dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
+    dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
+    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool),
+                                         np.zeros(len(surface_points), dtype=bool)])
+    dataset_forces = np.concatenate(
+        [np.zeros([len(sdf), 3], dtype=float), contact_forces, np.zeros([len(surface_points), 3], dtype=float)])
+
+    assert len(dataset_query_points) == len(dataset_sdf) and len(dataset_query_points) == len(
+        dataset_in_contact) and len(dataset_query_points) == len(dataset_forces)
+
     dataset_dict = {
         "query_points": dataset_query_points,
         "sdf": dataset_sdf,
