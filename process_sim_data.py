@@ -58,21 +58,6 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh, contact_points)
     surface_points = utils.sample_non_contact_surface_points(tri_mesh, contact_triangles, n=1000)
 
-    # Some visualization for contact verts/tris.
-    if vis:
-        tri_mesh_vedo = Mesh([tri_vert, tri_triangles])
-        contact_points_vedo = Points(contact_points, c="r")
-        tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
-        tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
-        tri_mesh_vedo_contact.celldata["CellIndividualColors"] = np.array(tri_colors).astype(np.uint8)
-        tri_mesh_vedo_contact.celldata.select("CellIndividualColors")
-        surface_points_vedo = Points(surface_points, c="b")
-
-        plt = Plotter(shape=(1, 2))
-        plt.at(0).show(contact_points_vedo, tri_mesh_vedo, "Contact Points")
-        plt.at(1).show(contact_points_vedo, tri_mesh_vedo_contact, surface_points_vedo, "Contact Vertices")
-        plt.interactive().close()
-
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
     dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
