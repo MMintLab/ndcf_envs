@@ -96,7 +96,7 @@
         </inertial>
         <visual>
             <geometry>
-                <mesh filename="meshes/wrist/gamma_wrist_v2.stl"/>
+                <mesh filename="meshes/wrist/gamma_wrist_v3.stl"/>
             </geometry>
         </visual>
         <collision>
@@ -107,9 +107,34 @@
         </collision>
     </link>
 
-    <joint name="attach" type="fixed">
+    <joint name="wrist_to_mount" type="fixed">
         <origin xyz="0 0 0" rpy="0 0 0"/>
         <parent link="wrist"/>
+        <child link="mount"/>
+    </joint>
+
+    <link name="mount">
+        <inertial>
+            <origin xyz="0.0 0.0 0.018"/>
+            <mass value="0.01"/>  <!-- TODO: Replace with real mass. -->
+            <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0.0" ixz="0.0" iyz="0.0"/>
+        </inertial>
+        <visual>
+            <geometry>
+                <mesh filename="meshes/sponge_mount/sponge_mount_v2.stl"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.018"/>
+            <geometry>
+                <cylinder radius="0.06" length="0.036"/>
+            </geometry>
+        </collision>
+    </link>
+
+    <joint name="mount_to_soft" type="fixed">
+        <origin xyz="0 0 0.036" rpy="0 0 0"/>
+        <parent link="mount"/>
         <child link="soft"/>
     </joint>
 

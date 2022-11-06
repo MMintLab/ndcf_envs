@@ -70,6 +70,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
         dataset_in_contact) and len(dataset_query_points) == len(dataset_forces)
 
     dataset_dict = {
+        "n_points": len(dataset_query_points),
         "query_points": dataset_query_points,
         "sdf": dataset_sdf,
         "in_contact": dataset_in_contact,
