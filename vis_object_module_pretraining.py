@@ -10,7 +10,7 @@ def vis_object_module_pretraining(data_fn: str):
     pred_dict = mmint_utils.load_gzip_pickle(data_fn)
 
     query_points = pred_dict["query_points"]
-    pred_sdf = pred_dict["pred_sdf"].squeeze(1)
+    pred_sdf = pred_dict["pred_sdf"]
     sdf = pred_dict["sdf"]
 
     plt = Plotter(shape=(1, 3))
