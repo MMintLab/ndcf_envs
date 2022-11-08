@@ -298,11 +298,15 @@ def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
 
 def reset_wrist_offset(gym, sim, env, wrist, tool_state_init, orientation, offset):
     # Determine position for tool.
-    start_orientation = [0, 0, 0, orientation[0], orientation[1], orientation[2]]
+    base_R_w = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
+    des_R_base = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
+    des_R_w = des_R_base @ base_R_w
+    ax, ay, az = tf3d.euler.mat2euler(des_R_w, axes="rxyz")
+    start_orientation = [0, 0, 0, ax, ay, az]
     z_offset = offset - min(transform_points(tool_state_init[:, :3], start_orientation)[:, 2])
 
     # Send to pose.
-    pose = [0, 0, z_offset, orientation[0], orientation[1], orientation[2]]
+    pose = [0, 0, z_offset, ax, ay, az]
     reset_wrist(gym, sim, env, wrist, tool_state_init, pose)
 
     return z_offset

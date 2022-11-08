@@ -96,7 +96,7 @@
         </inertial>
         <visual>
             <geometry>
-                <mesh filename="meshes/wrist/gamma_wrist_v3.stl"/>
+                <mesh filename="meshes/wrist/gamma_wrist/gamma_wrist_v3.stl"/>
             </geometry>
         </visual>
         <collision>
@@ -121,7 +121,7 @@
         </inertial>
         <visual>
             <geometry>
-                <mesh filename="meshes/sponge_mount/sponge_mount_v2.stl"/>
+                <mesh filename="meshes/wrist/sponge_mount/sponge_mount_v2.stl"/>
             </geometry>
         </visual>
         <collision>
@@ -133,20 +133,20 @@
     </link>
 
     <joint name="mount_to_soft" type="fixed">
-        <origin xyz="0 0 0.036" rpy="0 0 0"/>
+        <origin xyz="0 0 0.0" rpy="0 0 0"/>
         <parent link="mount"/>
         <child link="soft"/>
     </joint>
 
     <link name="soft">
         <fem>
-            <origin rpy="0 0 0" xyz="0 0 0"/>
+            <origin rpy="0 0 0" xyz="0 0 0.036"/>
             <density value="100"/>
             <youngs value="1e5"/>
             <poissons value="0.1"/>
             <damping value="0.0"/>
             <attachDistance value="0.05"/>
-            <tetmesh filename="meshes/sponge/sponge.tet"/>
+            <tetmesh filename="meshes/sponge/sponge_1/sponge_1.tet"/>
         </fem>
     </link>
 
