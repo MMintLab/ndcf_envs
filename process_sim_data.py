@@ -18,7 +18,7 @@ def vis_example_data(example_dict):
     plt = Plotter(shape=(1, 2))
     plt.at(0).show(Points(all_points), utils.draw_axes(), "All Sample Points")
     plt.at(1).show(Points(all_points[sdf <= 0.0], c="b"), Points(all_points[in_contact], c="r"),
-                   Arrows(all_points[in_contact], all_points[in_contact] + 0.001 * forces[in_contact]),
+                   Arrows(all_points[in_contact], all_points[in_contact] + 0.01 * forces[in_contact]),
                    utils.draw_axes(), "Occupied/Contact points")
     plt.interactive().close()
 
@@ -52,19 +52,43 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     contact_forces = utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
 
     # Get SDF values near object.
-    query_points, sdf = utils.get_sdf_values(tri_mesh, n=50000)
+    query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh, contact_points)
-    surface_points = utils.sample_non_contact_surface_points(tri_mesh, contact_triangles, n=1000)
+    contact_vertices, contact_triangles, contact_triangle_forces = utils.find_in_contact_triangles(tri_mesh,
+                                                                                                   contact_points,
+                                                                                                   contact_forces)
+    surface_points, surface_contact_labels, surface_forces = utils.sample_surface_points(tri_mesh, contact_triangles,
+                                                                                         contact_triangle_forces,
+                                                                                         n=20000)
+
+    # Some visualization for contact verts/tris.
+    # tri_mesh_vedo = Mesh([tri_vert, tri_triangles])
+    contact_points_vedo = Points(contact_points, c="r")
+    tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
+    tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
+    tri_mesh_vedo_contact.celldata["CellIndividualColors"] = np.array(tri_colors).astype(np.uint8)
+    tri_mesh_vedo_contact.celldata.select("CellIndividualColors")
+
+    new_points_vedo = Points(surface_points, c="b")
+    new_contact_points_vedo = Points(surface_points[surface_contact_labels], c="r")
+    new_point_forces_vedo = Arrows(surface_points[surface_contact_labels],
+                                   surface_points[surface_contact_labels] + 0.01 * surface_forces[
+                                       surface_contact_labels])
+
+    plt = Plotter(shape=(1, 2))
+    plt.at(0).show(contact_points_vedo, tri_mesh_vedo_contact, "Contact Points")
+    plt.at(1).show(new_points_vedo, new_contact_points_vedo, new_point_forces_vedo,
+                   Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
+    plt.interactive().close()
 
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
     dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
     dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool),
-                                         np.zeros(len(surface_points), dtype=bool)])
+                                         surface_contact_labels])
     dataset_forces = np.concatenate(
-        [np.zeros([len(sdf), 3], dtype=float), contact_forces, np.zeros([len(surface_points), 3], dtype=float)])
+        [np.zeros([len(sdf), 3], dtype=float), contact_forces, surface_forces])
 
     assert len(dataset_query_points) == len(dataset_sdf) and len(dataset_query_points) == len(
         dataset_in_contact) and len(dataset_query_points) == len(dataset_forces)
@@ -98,6 +122,6 @@ if __name__ == '__main__':
 
     for data_idx in range(len(data_fns)):
         data_fn = os.path.join(data_dir, data_fns[data_idx])
-        out_fn = os.path.join(data_dir, "out_%d.pkl.gzip" % data_idx)
+        out_fn_ = os.path.join(data_dir, "out_%d.pkl.gzip" % data_idx)
 
-        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, out_fn, vis=args.vis)
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, out_fn_, vis=args.vis)

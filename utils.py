@@ -4,6 +4,7 @@ import transforms3d as tf3d
 from vedo import Arrow
 from scipy.spatial import KDTree
 import trimesh
+import trimesh.sample
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -118,9 +119,12 @@ def load_tetmesh(meshfn):
     return vertices, tetrahedra
 
 
-def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n: int = 10000):
+def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n_off_surface: int = 10000,
+                   noise: float = 0.004):
     """
     Calculate SDF points for the given triangle mesh.
+
+    Sample n_random in random space around tool. Sample n_off_surface as points near surface.
     """
     # Build o3d scene with triangle mesh.
     tri_mesh_legacy = o3d.t.geometry.TriangleMesh.from_legacy(tri_mesh)
@@ -132,9 +136,15 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n: int = 10000):
     max_bounds = np.array(tri_mesh.get_max_bound())
     min_bounds -= 0.03
     max_bounds += 0.03
-    query_points_np = min_bounds + (np.random.random((n, 3)) * (max_bounds - min_bounds))
+    query_points_random = min_bounds + (np.random.random((n_random, 3)) * (max_bounds - min_bounds))
+
+    # Get SDF query points by sampling surface points and adding small amount of gaussian noise.
+    query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface)
+    query_points_surface = np.asarray(query_points_surface.points)
+    query_points_surface += np.random.normal(0.0, noise, size=query_points_surface.shape)
 
     # Compute SDF to surface.
+    query_points_np = np.concatenate([query_points_random, query_points_surface])
     query_points = o3d.core.Tensor(query_points_np, dtype=o3d.core.Dtype.Float32)
     signed_distance = scene.compute_signed_distance(query_points)
     signed_distance_np = signed_distance.numpy()
@@ -154,7 +164,8 @@ def draw_axes(scale=0.02):
     return axes
 
 
-def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
+def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray,
+                              contact_forces: np.ndarray):
     """
     Given the triangle mesh of the tool and the contact points (which are all vertices of the tool mesh),
     find the corresponding triangles in the mesh.
@@ -168,10 +179,23 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     _, contact_points_vert_idcs = kd_tree.query(contact_points)
     contact_vertices[contact_points_vert_idcs] = True
 
+    # Get force at each vertex of mesh.
+    vertices_forces = np.zeros(shape=[len(vertices), 3])
+    for contact_pt_idx, (contact_pt, contact_force) in enumerate(zip(contact_points, contact_forces)):
+        vertices_forces[contact_points_vert_idcs[contact_pt_idx]] = contact_force
+
     # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
     contact_triangles = np.array(
         [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
-    return contact_vertices, contact_triangles
+
+    # Determine average contact forces for each triangle.
+    contact_triangle_forces = np.zeros(shape=[contact_triangles.shape[0], 3])
+    for t_idx, (tri, in_contact) in enumerate(zip(triangles, contact_triangles)):
+        if in_contact:
+            contact_triangle_forces[t_idx] = (vertices_forces[tri[0]] + vertices_forces[tri[1]] + vertices_forces[
+                tri[2]]) / 3.0
+
+    return contact_vertices, contact_triangles, contact_triangle_forces
 
 
 def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
@@ -183,3 +207,19 @@ def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, conta
     triangle_weights = [1.0 if not c else 0.0 for c in contact_triangles]
     surface_points, _ = mesh.sample(n, return_index=True, face_weight=triangle_weights)
     return surface_points
+
+
+def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
+                          contact_triangle_forces: np.ndarray, n: int = 1000):
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+
+    # Sample on the surface.
+    surface_points, triangle_idcs = trimesh.sample.sample_surface(mesh, count=n)
+
+    # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
+    contact_labels = np.array([contact_triangles[t_idx] for t_idx in triangle_idcs])
+
+    # Determine contact forces. For now, use average of forces at vertices of sampled triangle.
+    contact_forces = np.array([contact_triangle_forces[t_idx] for t_idx in triangle_idcs])
+
+    return surface_points, contact_labels, contact_forces
