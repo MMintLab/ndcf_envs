@@ -1,3 +1,5 @@
+import pdb
+
 from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, write
 import meshio
 import mmint_utils
@@ -5,6 +7,7 @@ import argparse
 import numpy as np
 import open3d as o3d
 import utils
+import vedo_utils
 
 
 def vis_data(data_fn, base_tetra_mesh_fn):
@@ -12,16 +15,22 @@ def vis_data(data_fn, base_tetra_mesh_fn):
 
     # Get wrist pose.
     wrist_pose = data_dict["wrist_pose"]
-    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="sxyz")
+    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="rxyz")
     wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
+    mount_pose = data_dict["mount_pose"]
 
     # Load deformed object points.
     def_vert_w = data_dict["nodal_coords"][0]
     def_vert = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
 
+    plt = Plotter()
+    plt.at(0).show(Points(def_vert_w), vedo_utils.draw_pose(wrist_pose), vedo_utils.draw_pose(mount_pose),
+                   vedo_utils.draw_origin())
+    plt.interactive().close()
+
     # Load base tetra mesh of the undeformed mesh.
     tet_vert, tet_tetra = utils.load_tetmesh(base_tetra_mesh_fn)
-    tet_vedo = TetMesh([tet_vert, tet_tetra]).tomesh()
+    # tet_vedo = TetMesh([tet_vert, tet_tetra]).tomesh()
     tet_def_vedo = TetMesh([def_vert, tet_tetra]).tomesh()
 
     # Convert tetra mesh to triangle mesh. Note, we use the deformed vertices.
@@ -39,11 +48,20 @@ def vis_data(data_fn, base_tetra_mesh_fn):
     contact_forces = utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
     vedo_contact_forces = Arrows(contact_points, contact_points + (0.001 * contact_forces))
 
+    # Load wrist wrench.
+    wrist_wrench = np.array(data_dict["wrist_wrench"])
+    vedo_wrist_force = Arrow((0, 0, 0), 0.001 * wrist_wrench[:3], c="b")
+    vedo_wrist_torque = Arrow((0, 0, 0), wrist_wrench[3:], c="y")
+
+    mount_axes = vedo_utils.draw_pose(np.array([0.0, 0.0, 0.036, 0.0, 0.0, 0.0]))
+
     plt = Plotter(shape=(2, 2))
-    plt.at(0).show(tet_vedo, utils.draw_axes(), "Undeformed")
-    plt.at(1).show(tet_def_vedo, vedo_contact_points, utils.draw_axes(), "Deformed (Tet)")
-    plt.at(2).show(tri_vedo, utils.draw_axes(), "Deformed (Tri)")
-    plt.at(3).show(tri_vedo_alpha, vedo_contact_points, vedo_contact_forces, utils.draw_axes(), "Contact Points")
+    # plt.at(0).show(tet_vedo, vedo_utils.draw_axes(), "Undeformed")
+    plt.at(1).show(tet_def_vedo, vedo_contact_points, vedo_utils.draw_origin(), mount_axes, "Deformed (Tet)")
+    plt.at(2).show(tri_vedo, vedo_utils.draw_origin(), mount_axes,
+                   "Deformed (Tri)")
+    plt.at(3).show(tri_vedo_alpha, vedo_contact_points, vedo_contact_forces, vedo_wrist_force, vedo_wrist_torque,
+                   mount_axes, vedo_utils.draw_origin(), "Contact Points")
     plt.interactive().close()
 
 

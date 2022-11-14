@@ -1,7 +1,6 @@
-import open3d as o3d
 import numpy as np
 import transforms3d as tf3d
-from vedo import Arrow
+import open3d as o3d
 from scipy.spatial import KDTree
 import trimesh
 import trimesh.sample
@@ -50,7 +49,7 @@ def transform_vectors(vectors, T):
     return tf_vectors
 
 
-def pose_to_matrix(pose, axes="sxyz"):
+def pose_to_matrix(pose, axes="rxyz"):
     """
     Pose to matrix.
     """
@@ -63,6 +62,16 @@ def pose_to_matrix(pose, axes="sxyz"):
         matrix[:3, :3] = tf3d.quaternions.quat2mat(pose[3:])
 
     return matrix
+
+
+def matrix_to_pose(matrix, axes="rxyz"):
+    """
+    Matrix to pose.
+    """
+    pose = np.zeros(6)
+    pose[:3] = matrix[:3, 3]
+    pose[3:] = tf3d.euler.mat2euler(matrix, axes=axes)
+    return pose
 
 
 def tetrahedral_to_surface_triangles(verts, tetras):
@@ -150,18 +159,6 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
     signed_distance_np = signed_distance.numpy()
 
     return query_points_np, signed_distance_np
-
-
-def draw_axes(scale=0.02):
-    """
-    Helper to draw axes in vedo.
-    """
-    axes = [
-        Arrow(end_pt=[scale, 0, 0], c="r"),
-        Arrow(end_pt=[0, scale, 0], c="g"),
-        Arrow(end_pt=[0, 0, scale], c="b"),
-    ]
-    return axes
 
 
 def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray,

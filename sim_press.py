@@ -1,6 +1,7 @@
 import argparse
 import copy
 import os
+import pdb
 
 import mmint_utils
 from isaacgym import gymapi
@@ -17,9 +18,12 @@ import torch
 # Some code borrowed from: https://sites.google.com/nvidia.com/tactiledata2
 from mmint_utils.images2gif import images2gif
 
+from ncf_envs import utils
+
 
 def main():
     parser = argparse.ArgumentParser()
+    # parser.add_argument("run_fn", type=str, help="Real world run to try to match.")
     parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     args = parser.parse_args()
@@ -192,17 +196,16 @@ def get_wrist_dof_info(gym, env, wrist):
     return dof_states["pos"], dof_states["vel"]
 
 
-def extract_net_forces(gym, sim):
+def extract_contact_info(gym, sim):
     """
     Extract the net force vector on the wrist.
 
-    TODO: Add torque as well.
+    TODO: Add torque as well. Maybe handle in post-processing?
+    TODO: Extend to multi-environment setup.
     """
-
     contacts = gym.get_soft_contacts(sim)
-    num_envs = gym.get_env_count(sim)
-    net_force_vecs = np.zeros((num_envs, 3))
     contact_forces = []
+    contact_points = []
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
@@ -210,27 +213,16 @@ def extract_net_forces(gym, sim):
         env_index = rigid_body_index // 3
         force_vec = contact_force_mag * contact_normal
         contact_forces.append(force_vec)
-        net_force_vecs[env_index] += force_vec
-    net_force_vecs = -net_force_vecs
-
-    return net_force_vecs, contact_forces
-
-
-def extract_contact_points(gym, sim):
-    # TODO: Extend to multi-environment setup.
-    contacts = gym.get_soft_contacts(sim)
-    num_envs = gym.get_env_count(sim)
-    contact_points = []
-    for contact in contacts:
         contact_points.append(contact[5])
-    return contact_points
+
+    return contact_points, contact_forces
 
 
 def extract_nodal_coords(gym, sim, particle_states):
     """
     Extract the nodal coordinates for the tool from each environment.
     """
-
+    # read tetrahedral and triangle data from simulation
     gym.refresh_particle_state_tensor(sim)
     num_envs = gym.get_env_count(sim)
     num_particles = len(particle_states)
@@ -312,6 +304,25 @@ def reset_wrist_offset(gym, sim, env, wrist, tool_state_init, orientation, offse
     return z_offset
 
 
+def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
+    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="rxyz")
+    wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
+
+    # Load contact point cloud.
+    contact_points_w = np.array([list(ctc_pt) for ctc_pt in contact_points])
+    contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
+
+    # Load contact forces.
+    contact_forces_w = np.array(contact_forces)
+    contact_forces = -utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
+
+    wrist_wrench = np.zeros(6, dtype=float)
+    wrist_wrench[:3] = contact_forces.sum(axis=0)
+    wrist_wrench[3:] = np.cross(contact_points, contact_forces).sum(axis=0)
+
+    return wrist_wrench
+
+
 def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     # Render cameras.
     gym.step_graphics(sim)
@@ -320,32 +331,42 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
     gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
 
+    # Get wrist pose.
+    wrist_pose, _ = get_wrist_dof_info(gym, env, wrist)
+    w_T_wrist = utils.pose_to_matrix(wrist_pose, axes="rxyz")
+
+    # Wrist to tool mount.
+    wrist_T_mount = utils.pose_to_matrix(np.array([0.0, 0.0, 0.036, 0.0, 0.0, 0.0]), axes="rxyz")
+    mount_pose = utils.matrix_to_pose(w_T_wrist @ wrist_T_mount)
+
     # Get force.
-    force, contact_forces = extract_net_forces(gym, sim)
+    contact_points, contact_forces = extract_contact_info(gym, sim)
 
     # Get mesh deformations.
     nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
 
-    # Get contact points.
-    contact_points = extract_contact_points(gym, sim)
+    # For convenience, transform nodal coordinates to wrist frame.
+    nodal_coords_wrist = utils.transform_pointcloud(nodal_coords[0], np.linalg.inv(w_T_wrist))
 
     # Get camera sensing.
     rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
     depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
     seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
 
-    # Get wrist pose.
-    wrist_pose, _ = get_wrist_dof_info(gym, env, wrist)
+    # Get wrist wrench from contact points/forces.
+    wrist_wrench = get_wrist_wrench(contact_points, contact_forces, wrist_pose)
 
     results_dict = {
-        "force": force,
         "nodal_coords": nodal_coords,
+        "nodal_coords_wrist": nodal_coords_wrist,
         "contact_points": contact_points,
         "contact_forces": contact_forces,
         "rgb": rgb_image,
         "depth": depth_image,
         "segmentation": seg_image,
         "wrist_pose": wrist_pose,
+        "mount_pose": mount_pose,
+        "wrist_wrench": wrist_wrench,
     }
     return results_dict
 
@@ -360,8 +381,9 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
     indent_distance = 0.01
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
-    n = 10
-    configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([n, 3]) * np.array([0.6, 0.6, 0.6]))
+    # n = 10
+    # configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([n, 3]) * np.array([0.6, 0.6, 0.6]))
+    configs = [[-0.10547167, 0.21502815, 0.19059239]]
 
     for config_idx, config in enumerate(configs):
         # Reset to new config.
