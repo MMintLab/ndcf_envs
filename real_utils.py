@@ -1,11 +1,8 @@
 import os
-
-import cv2
 import open3d as o3d
 import mmint_utils
-
-import utils
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def load_pointcloud(filename):
@@ -19,7 +16,7 @@ def load_pointcloud(filename):
 
 
 def load_image(filename):
-    return cv2.imread(filename)
+    return plt.imread(filename)
 
 
 def load_observation_from_file(out_dir: str, example_name: str):
@@ -35,7 +32,7 @@ def load_observation_from_file(out_dir: str, example_name: str):
 
     # RGB.
     rgb_fn = os.path.join(out_dir, "%s_rgb.png" % example_name)
-    rgb_image = utils.load_image(rgb_fn)
+    rgb_image = load_image(rgb_fn)
 
     # Read the rest of the information to pkl file.
     data_fn = os.path.join(out_dir, "%s.pkl.gzip" % example_name)
@@ -49,7 +46,7 @@ def load_observation_from_file(out_dir: str, example_name: str):
     }
     if photoneo_scanned:
         obs_dict["visual"].update({
-            "photoneo": (photoneo, timestamp_dict["photoneo_pc"]),
+            "photoneo": (photoneo, timestamp_dict["photoneo"]),
         })
 
     return obs_dict

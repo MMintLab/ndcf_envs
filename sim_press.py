@@ -8,32 +8,44 @@ from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
 import numpy as np
-from tqdm import trange
 import transforms3d as tf3d
-
-from mmint_utils.trajectory_planning import get_linear_trajectory
 import torch
+import utils
+import real_utils
+
 
 # Simulate pressing deformable tool into surface.
 # Some code borrowed from: https://sites.google.com/nvidia.com/tactiledata2
-from mmint_utils.images2gif import images2gif
-
-from ncf_envs import utils
 
 
-def main():
+def recreate_real_press():
     parser = argparse.ArgumentParser()
-    # parser.add_argument("run_fn", type=str, help="Real world run to try to match.")
+    parser.add_argument("run_dir", type=str, help="Real world data directory.")
+    parser.add_argument("example_name", type=str, help="Real world example name.")
     parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     args = parser.parse_args()
-
     use_viewer = args.viewer
-    out = args.out
 
+    # Setup out directory.
+    out = args.out
     if out is not None:
         mmint_utils.make_dir(out)
 
+    # Load real world run data.
+    run_dir = args.run_dir
+    example_name = args.example_name
+    real_dict = real_utils.load_observation_from_file(run_dir, example_name)
+
+    # Get configuration from the real world data.
+    real_config = real_dict["proprioception"]["tool_orn_config"]
+
+    # Run simulation with the configuration used in the real world.
+    run_simulator([real_config], out, [example_name], use_viewer)
+
+
+def run_simulator(configs, out_dir: str, out_names, use_viewer: bool = False):
+    # Setup simulator.
     gym = gymapi.acquire_gym()
 
     # Setup sim object.
@@ -53,11 +65,12 @@ def main():
 
     # Create viewer.
     if use_viewer:
-        viewer, axes = create_viewer(gym, sim)
+        viewer, _ = create_viewer(gym, sim)
     else:
-        viewer = axes = None
+        viewer = None
 
-    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, axes, use_viewer, out)
+    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, out_dir, out_names,
+                 configs)
 
 
 def create_scene(gym, sim, wrist_asset_handle):
@@ -371,7 +384,7 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     return results_dict
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir):
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, out_dir, out_names, configs):
     # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
@@ -381,9 +394,6 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
     indent_distance = 0.01
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
-    # n = 10
-    # configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([n, 3]) * np.array([0.6, 0.6, 0.6]))
-    configs = [[-0.10547167, 0.21502815, 0.19059239]]
 
     for config_idx, config in enumerate(configs):
         # Reset to new config.
@@ -405,16 +415,21 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
                 gym.draw_viewer(viewer, sim, True)
                 gym.clear_lines(viewer)
 
+            # Get current wrist pose.
             curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
+            curr_z = curr_pos[2]
 
-            if t % 1000 == 0:
-                print("Curr z: %d" % curr_pos[2])
-
-            if curr_pos[2] < goal_z:
+            # If we've reached our lowering goal, exit.
+            if curr_z < goal_z:
                 break
 
-            curr_pos[2] += lowering_speed * dt
+            # Set new desired pose.
+            des_z = start_z + (lowering_speed * dt * t)
+            curr_pos[2] = des_z
             gym.set_actor_dof_position_targets(env, wrist, curr_pos)
+
+            # if t % 10 == 0:
+            #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
 
         # Let simulation settle a bit.
         for _ in range(100):
@@ -427,7 +442,7 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
 
         # Save results.
         if out_dir is not None:
-            mmint_utils.save_gzip_pickle(results_dict, os.path.join(out_dir, "config_%d.pkl.gzip" % config_idx))
+            mmint_utils.save_gzip_pickle(results_dict, os.path.join(out_dir, "%s.pkl.gzip" % out_names[config_idx]))
 
     # Clean up
     if use_viewer:
@@ -437,4 +452,4 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, axes, use_viewer, out_dir
 
 
 if __name__ == '__main__':
-    main()
+    recreate_real_press()
