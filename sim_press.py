@@ -43,9 +43,56 @@ def recreate_real_press():
     # Setup environment.
     gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
 
+    # Get initialize tool setup (used for resets).
+    tool_init_state = get_init_particle_state(gym, sim)
+
     # Run simulation with the configuration used in the real world.
-    results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config])
+    results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
+                           tool_init_state)
     mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
+
+    # Cleanup.
+    close_sim(gym, sim, viewer, use_viewer)
+
+
+def optimize_real_press():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("run_dir", type=str, help="Real world data directory.")
+    parser.add_argument("example_name", type=str, help="Real world example name.")
+    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
+    args = parser.parse_args()
+    use_viewer = args.viewer
+
+    # Load real world run data.
+    run_dir = args.run_dir
+    example_name = args.example_name
+    real_dict = real_utils.load_observation_from_file(run_dir, example_name)
+
+    # Get configuration from the real world data.
+    real_config = real_dict["proprioception"]["tool_orn_config"]
+
+    # Setup environment.
+    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
+
+    # Get initialize tool setup (used for resets).
+    tool_init_state = get_init_particle_state(gym, sim)
+
+    # Run simulation with the configuration used in the real world.
+    results_0 = \
+        run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
+                     tool_init_state)[0]
+
+    # Change actor soft materials.
+    soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
+    soft_mat.youngs = 1.0e8
+    gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
+
+    results_1 = \
+        run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
+                     tool_init_state)[0]
+
+    # Cleanup.
+    close_sim(gym, sim, viewer, use_viewer)
 
 
 def create_simulator(use_viewer: bool = False):
@@ -339,6 +386,14 @@ def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
     return wrist_wrench
 
 
+def get_init_particle_state(gym, sim):
+    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
+    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
+    gym.refresh_particle_state_tensor(sim)
+    tool_state_init = copy.deepcopy(particle_state_tensor)
+    return tool_state_init
+
+
 def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     # Render cameras.
     gym.step_graphics(sim)
@@ -387,11 +442,17 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     return results_dict
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs):
-    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
+def close_sim(gym, sim, viewer, use_viewer):
+    # Clean up
+    if use_viewer:
+        gym.destroy_viewer(viewer)
+    gym.destroy_sim(sim)
+    print("Done!")
+
+
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool_state_init):
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
-    tool_state_init = copy.deepcopy(particle_state_tensor)
 
     z_offset = 0.01
     indent_distance = 0.01
@@ -436,7 +497,7 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs):
             #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
 
         # Let simulation settle a bit.
-        for _ in range(100):
+        for _ in range(10):
             # Step simulator.
             gym.simulate(sim)
             gym.fetch_results(sim, True)
@@ -444,15 +505,9 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs):
         # Get results.
         results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
         results.append(results_dict)
-
-    # Clean up
-    if use_viewer:
-        gym.destroy_viewer(viewer)
-    gym.destroy_sim(sim)
-    print("Done!")
-
     return results
 
 
 if __name__ == '__main__':
-    recreate_real_press()
+    # recreate_real_press()
+    optimize_real_press()
