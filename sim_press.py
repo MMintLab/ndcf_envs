@@ -12,6 +12,7 @@ import transforms3d as tf3d
 import torch
 import utils
 import real_utils
+import scipy.optimize
 
 
 # Simulate pressing deformable tool into surface.
@@ -70,6 +71,7 @@ def optimize_real_press():
 
     # Get configuration from the real world data.
     real_config = real_dict["proprioception"]["tool_orn_config"]
+    real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
 
     # Setup environment.
     gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
@@ -77,19 +79,26 @@ def optimize_real_press():
     # Get initialize tool setup (used for resets).
     tool_init_state = get_init_particle_state(gym, sim)
 
-    # Run simulation with the configuration used in the real world.
-    results_0 = \
-        run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
-                     tool_init_state)[0]
+    def optim_func(soft_params):
+        # Change actor soft materials.
+        soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
+        soft_mat.youngs = soft_params[0]
+        soft_mat.poissons = soft_params[1]
+        gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
 
-    # Change actor soft materials.
-    soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
-    soft_mat.youngs = 1.0e8
-    gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
+        # Run simulation with the configuration used in the real world.
+        results = \
+            run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
+                         tool_init_state)[0]
 
-    results_1 = \
-        run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
-                     tool_init_state)[0]
+        # Compare simulated wrench to real wrench.
+        sim_wrench = results["wrist_wrench"]
+
+        wrench_loss = np.linalg.norm(real_wrench - sim_wrench)
+        return wrench_loss
+
+    res = scipy.optimize.differential_evolution(optim_func, [(1e3, 1e7), (0.0, 0.5)])
+    print(res)
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
@@ -497,7 +506,7 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
             #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
 
         # Let simulation settle a bit.
-        for _ in range(10):
+        for _ in range(3):
             # Step simulator.
             gym.simulate(sim)
             gym.fetch_results(sim, True)

@@ -20,7 +20,7 @@ def vis_real_vs_sim(real_dir: str, real_example: str, sim_fn: str):
     simulated_points_vedo = Points(simulated_points, c="black")
 
     simulated_wrench = sim_dict["wrist_wrench"]
-    vedo_sim_force = Arrow((0, 0, 0), 0.0001 * simulated_wrench[:3], c="b")
+    vedo_sim_force = Arrow((0, 0, 0), 0.00001 * simulated_wrench[:3], c="b")
     vedo_sim_torque = Arrow((0, 0, 0), 0.01 * simulated_wrench[3:], c="y")
 
     # Load real data.
