@@ -40,11 +40,15 @@ def recreate_real_press():
     # Get configuration from the real world data.
     real_config = real_dict["proprioception"]["tool_orn_config"]
 
+    # Setup environment.
+    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
+
     # Run simulation with the configuration used in the real world.
-    run_simulator([real_config], out, [example_name], use_viewer)
+    results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config])
+    mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
 
 
-def run_simulator(configs, out_dir: str, out_names, use_viewer: bool = False):
+def create_simulator(use_viewer: bool = False):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -69,8 +73,7 @@ def run_simulator(configs, out_dir: str, out_names, use_viewer: bool = False):
     else:
         viewer = None
 
-    run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, out_dir, out_names,
-                 configs)
+    return gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer
 
 
 def create_scene(gym, sim, wrist_asset_handle):
@@ -384,7 +387,7 @@ def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
     return results_dict
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, out_dir, out_names, configs):
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs):
     # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
@@ -395,6 +398,7 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, out_dir, out_
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
 
+    results = []
     for config_idx, config in enumerate(configs):
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(tool_state_init)
@@ -439,16 +443,15 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, out_dir, out_
 
         # Get results.
         results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
-
-        # Save results.
-        if out_dir is not None:
-            mmint_utils.save_gzip_pickle(results_dict, os.path.join(out_dir, "%s.pkl.gzip" % out_names[config_idx]))
+        results.append(results_dict)
 
     # Clean up
     if use_viewer:
         gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)
     print("Done!")
+
+    return results
 
 
 if __name__ == '__main__':
