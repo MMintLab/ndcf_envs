@@ -142,8 +142,8 @@
         <fem>
             <origin rpy="0 0 0" xyz="0 0 0.036"/>
             <density value="100"/>
-            <youngs value="1e4"/>
-            <poissons value="0.1"/>
+            <youngs value="4.391e4"/>
+            <poissons value="0.3810"/>
             <damping value="0.0"/>
             <attachDistance value="0.05"/>
             <tetmesh filename="meshes/sponge/sponge_1/sponge_1.tet"/>

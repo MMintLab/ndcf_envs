@@ -40,6 +40,7 @@ def recreate_real_press():
 
     # Get configuration from the real world data.
     real_config = real_dict["proprioception"]["tool_orn_config"]
+    real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
 
     # Setup environment.
     gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
@@ -50,7 +51,8 @@ def recreate_real_press():
     # Run simulation with the configuration used in the real world.
     results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
                            tool_init_state)
-    mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
+    if out is not None:
+        mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
@@ -72,6 +74,7 @@ def optimize_real_press():
     # Get configuration from the real world data.
     real_config = real_dict["proprioception"]["tool_orn_config"]
     real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
+    print(real_wrench)
 
     # Setup environment.
     gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
@@ -97,8 +100,9 @@ def optimize_real_press():
         wrench_loss = np.linalg.norm(real_wrench - sim_wrench)
         return wrench_loss
 
-    res = scipy.optimize.differential_evolution(optim_func, [(1e3, 1e7), (0.0, 0.5)])
-    print(res)
+    # res = scipy.optimize.differential_evolution(optim_func, [(1e3, 1e7), (0.0, 0.5)])
+    # print(res)
+    optim_func([4.39117435e+04, 3.81013133e-01])
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
@@ -121,7 +125,7 @@ def create_simulator(use_viewer: bool = False):
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [3e9, 50])
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [200, 10], [200, 10])
 
     # Create viewer.
     if use_viewer:
@@ -247,15 +251,19 @@ def create_viewer(gym, sim):
     return viewer, axes_geom
 
 
-def set_wrist_ctrl_props(gym, env, wrist, pd_gains=[1.0e9, 0.0]):
+def set_wrist_ctrl_props(gym, env, wrist, pos_pd_gains=[1.0e9, 0.0], orn_pd_gains=[1.0e9, 0.0]):
     """
     Set wrist control properties.
     """
     wrist_dof_props = gym.get_actor_dof_properties(env, wrist)
-    for dof_idx in range(wrist_dof_props.shape[0]):
+    for dof_idx in range(3):
         wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
-        wrist_dof_props['stiffness'][dof_idx] = pd_gains[0]
-        wrist_dof_props['damping'][dof_idx] = pd_gains[1]
+        wrist_dof_props['stiffness'][dof_idx] = pos_pd_gains[0]
+        wrist_dof_props['damping'][dof_idx] = pos_pd_gains[1]
+    for dof_idx in range(3, 6):
+        wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
+        wrist_dof_props['stiffness'][dof_idx] = orn_pd_gains[0]
+        wrist_dof_props['damping'][dof_idx] = orn_pd_gains[1]
     gym.set_actor_dof_properties(env, wrist, wrist_dof_props)
 
 
@@ -463,8 +471,8 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
-    z_offset = 0.01
-    indent_distance = 0.01
+    z_offset = 0.0001
+    indent_distance = 0.005
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
 
@@ -513,6 +521,7 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
 
         # Get results.
         results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
+        print("Wrench: " + str(results_dict["wrist_wrench"]))
         results.append(results_dict)
     return results
 
