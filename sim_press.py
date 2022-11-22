@@ -41,6 +41,10 @@ def recreate_real_press():
     # Get configuration from the real world data.
     real_config = real_dict["proprioception"]["tool_orn_config"]
     real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
+    ee_pose = real_dict["proprioception"]["ee_pose"][0]
+    table_height = 0.21
+    press_z = ee_pose[0][2] - table_height
+    print("Real Wrench: " + str(real_wrench))
 
     # Setup environment.
     gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
@@ -50,7 +54,7 @@ def recreate_real_press():
 
     # Run simulation with the configuration used in the real world.
     results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
-                           tool_init_state)
+                           [press_z], tool_init_state)
     if out is not None:
         mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
 
@@ -125,7 +129,7 @@ def create_simulator(use_viewer: bool = False):
     env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [200, 10], [200, 10])
+    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [1e9, 50], [1e9, 50])
 
     # Create viewer.
     if use_viewer:
@@ -467,7 +471,7 @@ def close_sim(gym, sim, viewer, use_viewer):
     print("Done!")
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool_state_init):
+def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, z_heights, tool_state_init):
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
@@ -477,11 +481,12 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
     dt = gym.get_sim_params(sim).dt
 
     results = []
-    for config_idx, config in enumerate(configs):
+    for config_idx, (config, z_height) in enumerate(zip(configs, z_heights)):
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(tool_state_init)
         start_z = reset_wrist_offset(gym, sim, env, wrist, tool_state_init_, config, z_offset)
-        goal_z = start_z - z_offset - indent_distance
+        # goal_z = start_z - z_offset - indent_distance
+        goal_z = z_height
 
         # Lower until in contact.
         t = 0
@@ -502,22 +507,26 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
             curr_z = curr_pos[2]
 
             # If we've reached our lowering goal, exit.
-            if curr_z < goal_z:
+            if abs(curr_z - goal_z) < 0.001:
                 break
 
             # Set new desired pose.
             des_z = start_z + (lowering_speed * dt * t)
-            curr_pos[2] = des_z
+            curr_pos[2] = max(des_z, goal_z)
             gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
             # if t % 10 == 0:
             #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
 
         # Let simulation settle a bit.
-        for _ in range(3):
+        for _ in range(100):
             # Step simulator.
             gym.simulate(sim)
             gym.fetch_results(sim, True)
+            if use_viewer:
+                gym.step_graphics(sim)
+                gym.draw_viewer(viewer, sim, True)
+                gym.clear_lines(viewer)
 
         # Get results.
         results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
@@ -527,5 +536,5 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, tool
 
 
 if __name__ == '__main__':
-    # recreate_real_press()
-    optimize_real_press()
+    recreate_real_press()
+    # optimize_real_press()
