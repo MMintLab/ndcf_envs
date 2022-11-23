@@ -27,6 +27,7 @@ def recreate_real_press():
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     args = parser.parse_args()
     use_viewer = args.viewer
+    num_envs = 4  # TODO: Parameterize.
 
     # Setup out directory.
     out = args.out
@@ -47,14 +48,14 @@ def recreate_real_press():
     print("Real Wrench: " + str(real_wrench))
 
     # Setup environment.
-    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
+    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer = create_simulator(num_envs, use_viewer)
 
     # Get initialize tool setup (used for resets).
     tool_init_state = get_init_particle_state(gym, sim)
 
     # Run simulation with the configuration used in the real world.
-    results = run_sim_loop(gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, use_viewer, [real_config],
-                           [press_z], tool_init_state)
+    results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
+                           [real_config], [press_z], tool_init_state)
     if out is not None:
         mmint_utils.save_gzip_pickle(results[0], os.path.join(out, "%s.pkl.gzip" % example_name))
 
@@ -112,7 +113,7 @@ def optimize_real_press():
     close_sim(gym, sim, viewer, use_viewer)
 
 
-def create_simulator(use_viewer: bool = False):
+def create_simulator(num_envs: int, use_viewer: bool = False):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -126,10 +127,11 @@ def create_simulator(use_viewer: bool = False):
         0]
 
     # Create scene.
-    env_handle, wrist_actor_handle, camera_handle = create_scene(gym, sim, wrist_asset_handle)
+    scene_props = set_scene_props(num_envs)
+    env_handles, wrist_actor_handles, camera_handles = create_scene(gym, sim, scene_props, wrist_asset_handle)
 
     # Setup wrist control properties.
-    set_wrist_ctrl_props(gym, env_handle, wrist_actor_handle, [1e9, 50], [1e9, 50])
+    set_wrist_ctrl_props(gym, env_handles, wrist_actor_handles, [1e9, 50], [1e9, 50])
 
     # Create viewer.
     if use_viewer:
@@ -137,10 +139,25 @@ def create_simulator(use_viewer: bool = False):
     else:
         viewer = None
 
-    return gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer
+    return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer
 
 
-def create_scene(gym, sim, wrist_asset_handle):
+def set_scene_props(num_envs, env_dim=0.5):
+    """
+    Setup scene and environment properties.
+    """
+    envs_per_row = int(np.ceil(np.sqrt(num_envs)))
+    env_lower = gymapi.Vec3(-env_dim, 0, -env_dim)
+    env_upper = gymapi.Vec3(env_dim, env_dim, env_dim)
+    scene_props = {'num_envs': num_envs,
+                   'per_row': envs_per_row,
+                   'lower': env_lower,
+                   'upper': env_upper}
+
+    return scene_props
+
+
+def create_scene(gym, sim, props, wrist_asset_handle):
     """
     Create scene.
     """
@@ -152,21 +169,29 @@ def create_scene(gym, sim, wrist_asset_handle):
     plane_params.dynamic_friction = 1
     gym.add_ground(sim, plane_params)
 
-    # Create environment.
-    env_handle = gym.create_env(sim, gymapi.Vec3(-1.0, 0.0, -1.0), gymapi.Vec3(1.0, 1.0, 1.0), 1)
+    env_handles = []
+    wrist_actor_handles = []
+    camera_handles = []
 
-    # Create wrist.
-    pose = gymapi.Transform()
-    wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", segmentationId=1)
+    for i in range(props["num_envs"]):
+        # Create environment.
+        env_handle = gym.create_env(sim, props['lower'], props['upper'], props['per_row'])
+        env_handles.append(env_handle)
 
-    # Create camera.
-    camera_props = gymapi.CameraProperties()
-    camera_props.width = 512
-    camera_props.height = 512
-    camera_handle = gym.create_camera_sensor(env_handle, camera_props)
-    gym.set_camera_location(camera_handle, env_handle, gymapi.Vec3(0.5, 0.0, 0.5), gymapi.Vec3(0.0, 0.0, 0.0))
+        # Create wrist.
+        pose = gymapi.Transform()
+        wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", segmentationId=1)
+        wrist_actor_handles.append(wrist_actor_handle)
 
-    return env_handle, wrist_actor_handle, camera_handle
+        # Create camera.
+        camera_props = gymapi.CameraProperties()
+        camera_props.width = 512
+        camera_props.height = 512
+        camera_handle = gym.create_camera_sensor(env_handle, camera_props)
+        gym.set_camera_location(camera_handle, env_handle, gymapi.Vec3(0.5, 0.0, 0.5), gymapi.Vec3(0.0, 0.0, 0.0))
+        camera_handles.append(camera_handle)
+
+    return env_handles, wrist_actor_handles, camera_handles
 
 
 def create_sim(gym):
@@ -255,20 +280,21 @@ def create_viewer(gym, sim):
     return viewer, axes_geom
 
 
-def set_wrist_ctrl_props(gym, env, wrist, pos_pd_gains=[1.0e9, 0.0], orn_pd_gains=[1.0e9, 0.0]):
+def set_wrist_ctrl_props(gym, envs, wrists, pos_pd_gains=[1.0e9, 0.0], orn_pd_gains=[1.0e9, 0.0]):
     """
     Set wrist control properties.
     """
-    wrist_dof_props = gym.get_actor_dof_properties(env, wrist)
-    for dof_idx in range(3):
-        wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
-        wrist_dof_props['stiffness'][dof_idx] = pos_pd_gains[0]
-        wrist_dof_props['damping'][dof_idx] = pos_pd_gains[1]
-    for dof_idx in range(3, 6):
-        wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
-        wrist_dof_props['stiffness'][dof_idx] = orn_pd_gains[0]
-        wrist_dof_props['damping'][dof_idx] = orn_pd_gains[1]
-    gym.set_actor_dof_properties(env, wrist, wrist_dof_props)
+    for env, wrist in zip(envs, wrists):
+        wrist_dof_props = gym.get_actor_dof_properties(env, wrist)
+        for dof_idx in range(3):
+            wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
+            wrist_dof_props['stiffness'][dof_idx] = pos_pd_gains[0]
+            wrist_dof_props['damping'][dof_idx] = pos_pd_gains[1]
+        for dof_idx in range(3, 6):
+            wrist_dof_props['driveMode'][dof_idx] = gymapi.DOF_MODE_POS
+            wrist_dof_props['stiffness'][dof_idx] = orn_pd_gains[0]
+            wrist_dof_props['damping'][dof_idx] = orn_pd_gains[1]
+        gym.set_actor_dof_properties(env, wrist, wrist_dof_props)
 
 
 def get_wrist_dof_info(gym, env, wrist):
@@ -354,7 +380,7 @@ def transform_points(points, transform, axes='rxyz'):
     return (tf_matrix @ points_tf.T).T[:, :3]
 
 
-def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
+def reset_wrist(gym, sim, env, wrist, joint_state):
     """
     Reset wrist to starting pose (including joint position set points).
 
@@ -365,27 +391,32 @@ def reset_wrist(gym, sim, env, wrist, tool_state_init, joint_state):
     reset_joint_state(gym, env, wrist, joint_state)
     gym.set_actor_dof_position_targets(env, wrist, joint_state)
 
-    # Transform particle positions to new pose.
-    tool_state_init[:, :3] = torch.from_numpy(transform_points(tool_state_init[:, :3], joint_state)).to("cuda:0")
 
-    # return points, tf_matrix
-    gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init))
+def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offset):
+    z_offsets = []
 
+    for env_idx, (env, wrist, orientation) in enumerate(zip(envs, wrists, orientations)):
+        # Determine position for tool.
+        base_R_w = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
+        des_R_base = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
+        des_R_w = des_R_base @ base_R_w
+        ax, ay, az = tf3d.euler.mat2euler(des_R_w, axes="rxyz")
+        start_orientation = [0, 0, 0, ax, ay, az]
+        z_offset = offset - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
+        z_offsets.append(z_offset)
 
-def reset_wrist_offset(gym, sim, env, wrist, tool_state_init, orientation, offset):
-    # Determine position for tool.
-    base_R_w = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
-    des_R_base = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
-    des_R_w = des_R_base @ base_R_w
-    ax, ay, az = tf3d.euler.mat2euler(des_R_w, axes="rxyz")
-    start_orientation = [0, 0, 0, ax, ay, az]
-    z_offset = offset - min(transform_points(tool_state_init[:, :3], start_orientation)[:, 2])
+        # Send to pose.
+        pose = [0, 0, z_offset, ax, ay, az]
+        reset_wrist(gym, sim, env, wrist, pose)
 
-    # Send to pose.
-    pose = [0, 0, z_offset, ax, ay, az]
-    reset_wrist(gym, sim, env, wrist, tool_state_init, pose)
+        # Transform particle positions to new pose.
+        tool_state_init[env_idx, :, :3] = torch.from_numpy(transform_points(tool_state_init[env_idx, :, :3], pose)).to(
+            "cuda:0")
 
-    return z_offset
+    # Set particle states for tools to avoid bad initialization.
+    gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init.reshape(-1, tool_state_init.shape[-1])))
+
+    return z_offsets
 
 
 def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
@@ -415,52 +446,56 @@ def get_init_particle_state(gym, sim):
     return tool_state_init
 
 
-def get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor):
+def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
+    # TODO: Fix this up.
     # Render cameras.
     gym.step_graphics(sim)
     gym.render_all_camera_sensors(sim)
 
-    gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
-    gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
-
-    # Get wrist pose.
-    wrist_pose, _ = get_wrist_dof_info(gym, env, wrist)
-    w_T_wrist = utils.pose_to_matrix(wrist_pose, axes="rxyz")
-
-    # Wrist to tool mount.
-    wrist_T_mount = utils.pose_to_matrix(np.array([0.0, 0.0, 0.036, 0.0, 0.0, 0.0]), axes="rxyz")
-    mount_pose = utils.matrix_to_pose(w_T_wrist @ wrist_T_mount)
-
-    # Get force.
-    contact_points, contact_forces = extract_contact_info(gym, sim)
-
     # Get mesh deformations.
     nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
 
-    # For convenience, transform nodal coordinates to wrist frame.
-    nodal_coords_wrist = utils.transform_pointcloud(nodal_coords[0], np.linalg.inv(w_T_wrist))
+    results = []
+    for env_idx, (env, wrist, camera) in enumerate(zip(envs, wrists, cameras)):
+        gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
+        gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
 
-    # Get camera sensing.
-    rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
-    depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
-    seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+        # Get wrist pose.
+        wrist_pose, _ = get_wrist_dof_info(gym, env, wrist)
+        w_T_wrist = utils.pose_to_matrix(wrist_pose, axes="rxyz")
 
-    # Get wrist wrench from contact points/forces.
-    wrist_wrench = get_wrist_wrench(contact_points, contact_forces, wrist_pose)
+        # Wrist to tool mount.
+        wrist_T_mount = utils.pose_to_matrix(np.array([0.0, 0.0, 0.036, 0.0, 0.0, 0.0]), axes="rxyz")
+        mount_pose = utils.matrix_to_pose(w_T_wrist @ wrist_T_mount)
 
-    results_dict = {
-        "nodal_coords": nodal_coords,
-        "nodal_coords_wrist": nodal_coords_wrist,
-        "contact_points": contact_points,
-        "contact_forces": contact_forces,
-        "rgb": rgb_image,
-        "depth": depth_image,
-        "segmentation": seg_image,
-        "wrist_pose": wrist_pose,
-        "mount_pose": mount_pose,
-        "wrist_wrench": wrist_wrench,
-    }
-    return results_dict
+        # Get force.
+        contact_points, contact_forces = extract_contact_info(gym, sim)
+
+        # For convenience, transform nodal coordinates to wrist frame.
+        nodal_coords_wrist = utils.transform_pointcloud(nodal_coords[env_idx], np.linalg.inv(w_T_wrist))
+
+        # Get camera sensing.
+        rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
+        depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
+        seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+
+        # Get wrist wrench from contact points/forces.
+        wrist_wrench = get_wrist_wrench(contact_points, contact_forces, wrist_pose)
+
+        results_dict = {
+            "nodal_coords": nodal_coords,
+            "nodal_coords_wrist": nodal_coords_wrist,
+            "contact_points": contact_points,
+            "contact_forces": contact_forces,
+            "rgb": rgb_image,
+            "depth": depth_image,
+            "segmentation": seg_image,
+            "wrist_pose": wrist_pose,
+            "mount_pose": mount_pose,
+            "wrist_wrench": wrist_wrench,
+        }
+        results.append(results_dict)
+    return results
 
 
 def close_sim(gym, sim, viewer, use_viewer):
@@ -471,7 +506,7 @@ def close_sim(gym, sim, viewer, use_viewer):
     print("Done!")
 
 
-def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, z_heights, tool_state_init):
+def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, tool_state_init):
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
@@ -479,12 +514,14 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, z_he
     indent_distance = 0.005
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
+    num_envs = len(envs)
 
     results = []
     for config_idx, (config, z_height) in enumerate(zip(configs, z_heights)):
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(tool_state_init)
-        start_z = reset_wrist_offset(gym, sim, env, wrist, tool_state_init_, config, z_offset)
+        tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
+        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, [config] * num_envs, z_offset)
         # goal_z = start_z - z_offset - indent_distance
         goal_z = z_height
 
@@ -502,24 +539,30 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, z_he
                 gym.draw_viewer(viewer, sim, True)
                 gym.clear_lines(viewer)
 
-            # Get current wrist pose.
-            curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
-            curr_z = curr_pos[2]
+            # Set goal motions for each wrist.
+            complete = True
+            for env, wrist, start_z in zip(envs, wrists, start_zs):
+                # Get current wrist pose.
+                curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
+                curr_z = curr_pos[2]
 
-            # If we've reached our lowering goal, exit.
-            if abs(curr_z - goal_z) < 0.001:
+                # If we've reached our lowering goal, exit.
+                if abs(curr_z - goal_z) > 0.001:
+                    complete = False
+
+                # Set new desired pose.
+                des_z = start_z + (lowering_speed * dt * t)
+                curr_pos[2] = max(des_z, goal_z)
+                gym.set_actor_dof_position_targets(env, wrist, curr_pos)
+
+                # if t % 10 == 0:
+                #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
+
+            if complete:
                 break
 
-            # Set new desired pose.
-            des_z = start_z + (lowering_speed * dt * t)
-            curr_pos[2] = max(des_z, goal_z)
-            gym.set_actor_dof_position_targets(env, wrist, curr_pos)
-
-            # if t % 10 == 0:
-            #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
-
         # Let simulation settle a bit.
-        for _ in range(100):
+        for _ in range(10):
             # Step simulator.
             gym.simulate(sim)
             gym.fetch_results(sim, True)
@@ -529,9 +572,8 @@ def run_sim_loop(gym, sim, env, wrist, camera, viewer, use_viewer, configs, z_he
                 gym.clear_lines(viewer)
 
         # Get results.
-        results_dict = get_results(gym, sim, env, wrist, camera, viewer, particle_state_tensor)
-        print("Wrench: " + str(results_dict["wrist_wrench"]))
-        results.append(results_dict)
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)
+        results.extend(results_)
     return results
 
 
