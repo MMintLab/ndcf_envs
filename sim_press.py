@@ -63,6 +63,53 @@ def recreate_real_press():
     close_sim(gym, sim, viewer, use_viewer)
 
 
+def recreate_real_presses():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("run_dir", type=str, help="Real world data directory.")
+    parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
+    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
+    parser.add_argument("--num_envs", "-n", type=int, default=4,
+                        help="Number of environments to simultaneously simulate.")
+    args = parser.parse_args()
+    use_viewer = args.viewer
+    num_envs = args.num_envs
+
+    # Setup out directory.
+    out = args.out
+    if out is not None:
+        mmint_utils.make_dir(out)
+
+    # Load real world run data.
+    run_dir = args.run_dir
+    example_names = [f.replace(".pkl.gzip", "") for f in os.listdir(run_dir) if ".pkl.gzip" in f]
+    example_names.sort(key=lambda k: int(k.split(".")[0].split("_")[-1]))
+    real_configs = []
+    press_zs = []
+    for example_name in example_names:
+        real_dict = real_utils.load_observation_from_file(run_dir, example_name)
+
+        # Get configuration from the real world data.
+        real_config = real_dict["proprioception"]["tool_orn_config"]
+        real_configs.append(real_config)
+        ee_pose = real_dict["proprioception"]["ee_pose"][0]
+        table_height = 0.21
+        press_z = ee_pose[0][2] - table_height
+        press_zs.append(press_z)
+
+    # Setup environment.
+    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer = create_simulator(num_envs, use_viewer)
+
+    # Get initialize tool setup (used for resets).
+    tool_init_state = get_init_particle_state(gym, sim)
+
+    # Run simulation with the configuration used in the real world.
+    results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
+                           real_configs, press_zs, tool_init_state)
+
+    # Cleanup.
+    close_sim(gym, sim, viewer, use_viewer)
+
+
 def optimize_real_press():
     parser = argparse.ArgumentParser()
     parser.add_argument("run_dir", type=str, help="Real world data directory.")
@@ -142,12 +189,12 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer
 
 
-def set_scene_props(num_envs, env_dim=0.5):
+def set_scene_props(num_envs, env_dim=0.1):
     """
     Setup scene and environment properties.
     """
     envs_per_row = int(np.ceil(np.sqrt(num_envs)))
-    env_lower = gymapi.Vec3(-env_dim, 0, -env_dim)
+    env_lower = gymapi.Vec3(-env_dim, -env_dim, -env_dim)
     env_upper = gymapi.Vec3(env_dim, env_dim, env_dim)
     scene_props = {'num_envs': num_envs,
                    'per_row': envs_per_row,
@@ -309,21 +356,19 @@ def get_wrist_dof_info(gym, env, wrist):
 def extract_contact_info(gym, sim):
     """
     Extract the net force vector on the wrist.
-
-    TODO: Add torque as well. Maybe handle in post-processing?
-    TODO: Extend to multi-environment setup.
     """
     contacts = gym.get_soft_contacts(sim)
-    contact_forces = []
-    contact_points = []
+    num_envs = gym.get_env_count(sim)
+    contact_forces = [[]] * num_envs
+    contact_points = [[]] * num_envs
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
         env_index = rigid_body_index // 3
         force_vec = contact_force_mag * contact_normal
-        contact_forces.append(force_vec)
-        contact_points.append(contact[5])
+        contact_forces[env_index].append(force_vec)
+        contact_points[env_index].append(contact[5])
 
     return contact_points, contact_forces
 
@@ -331,6 +376,8 @@ def extract_contact_info(gym, sim):
 def extract_nodal_coords(gym, sim, particle_states):
     """
     Extract the nodal coordinates for the tool from each environment.
+
+    Note: this assumes an equal number of nodes per environment.
     """
     # read tetrahedral and triangle data from simulation
     gym.refresh_particle_state_tensor(sim)
@@ -447,13 +494,15 @@ def get_init_particle_state(gym, sim):
 
 
 def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
-    # TODO: Fix this up.
     # Render cameras.
     gym.step_graphics(sim)
     gym.render_all_camera_sensors(sim)
 
-    # Get mesh deformations.
+    # Get mesh deformations for all envs.
     nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
+
+    # Get contact information for all envs.
+    contact_points, contact_forces = extract_contact_info(gym, sim)
 
     results = []
     for env_idx, (env, wrist, camera) in enumerate(zip(envs, wrists, cameras)):
@@ -468,9 +517,6 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
         wrist_T_mount = utils.pose_to_matrix(np.array([0.0, 0.0, 0.036, 0.0, 0.0, 0.0]), axes="rxyz")
         mount_pose = utils.matrix_to_pose(w_T_wrist @ wrist_T_mount)
 
-        # Get force.
-        contact_points, contact_forces = extract_contact_info(gym, sim)
-
         # For convenience, transform nodal coordinates to wrist frame.
         nodal_coords_wrist = utils.transform_pointcloud(nodal_coords[env_idx], np.linalg.inv(w_T_wrist))
 
@@ -480,10 +526,10 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
         seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
 
         # Get wrist wrench from contact points/forces.
-        wrist_wrench = get_wrist_wrench(contact_points, contact_forces, wrist_pose)
+        wrist_wrench = get_wrist_wrench(contact_points[env_idx], contact_forces[env_idx], wrist_pose)
 
         results_dict = {
-            "nodal_coords": nodal_coords,
+            "nodal_coords": nodal_coords[env_idx],
             "nodal_coords_wrist": nodal_coords_wrist,
             "contact_points": contact_points,
             "contact_forces": contact_forces,
@@ -515,15 +561,18 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
+    num_configs = len(configs)
+    num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
 
     results = []
-    for config_idx, (config, z_height) in enumerate(zip(configs, z_heights)):
+    for range_idx in range(num_rounds):
+        round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
+        round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
+
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(tool_state_init)
         tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, [config] * num_envs, z_offset)
-        # goal_z = start_z - z_offset - indent_distance
-        goal_z = z_height
+        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
 
         # Lower until in contact.
         t = 0
@@ -541,7 +590,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
             # Set goal motions for each wrist.
             complete = True
-            for env, wrist, start_z in zip(envs, wrists, start_zs):
+            for env, wrist, start_z, goal_z in zip(envs, wrists, start_zs, round_goal_z_heights):
                 # Get current wrist pose.
                 curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
                 curr_z = curr_pos[2]
@@ -554,9 +603,6 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 des_z = start_z + (lowering_speed * dt * t)
                 curr_pos[2] = max(des_z, goal_z)
                 gym.set_actor_dof_position_targets(env, wrist, curr_pos)
-
-                # if t % 10 == 0:
-                #     print("curr: %f, subgoal: %f, goal: %f" % (curr_z, des_z, goal_z))
 
             if complete:
                 break
@@ -572,11 +618,12 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 gym.clear_lines(viewer)
 
         # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)[:len(round_configs)]
         results.extend(results_)
     return results
 
 
 if __name__ == '__main__':
-    recreate_real_press()
+    recreate_real_presses()
+    # recreate_real_press()
     # optimize_real_press()
