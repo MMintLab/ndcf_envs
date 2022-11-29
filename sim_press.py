@@ -75,7 +75,7 @@ def recreate_real_presses():
     # Run simulation with the configuration used in the real world.
     start_time = time.time()
     run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                 real_configs, press_zs)
+                 real_configs, press_zs, init_particle_state)
     end_time = time.time()
     run_time = end_time - start_time
     print("Run time: %f" % run_time)
@@ -159,7 +159,7 @@ def optim_real_presses_grid_search():
         return results
 
     # Setup soft params.
-    youngs = np.arange(1e3, 1e5 + 1, (1e5 - 1e3) / 10.0)
+    youngs = np.arange(1e3, 1e4 + 1, (1e4 - 1e3) / 10.0)
     youngs_results = {young: optim_func([young]) for young in youngs}
 
     if out is not None:
