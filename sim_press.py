@@ -10,9 +10,12 @@ from isaacgym import gymutil
 import numpy as np
 import transforms3d as tf3d
 import torch
+from tqdm import trange
+
 import utils
 import real_utils
 import scipy.optimize
+import time
 
 
 # Simulate pressing deformable tool into surface.
@@ -66,11 +69,16 @@ def recreate_real_presses():
         mmint_utils.make_dir(out)
 
     # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer = create_simulator(num_envs, use_viewer)
+    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
+        create_simulator(num_envs, use_viewer)
 
     # Run simulation with the configuration used in the real world.
+    start_time = time.time()
     run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                  real_configs, press_zs)
+    end_time = time.time()
+    run_time = end_time - start_time
+    print("Run time: %f" % run_time)
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
@@ -89,7 +97,7 @@ def optim_real_presses_de():
     real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
 
     # Setup environment.
-    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer = create_simulator(use_viewer)
+    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, init_particle_state = create_simulator(use_viewer)
 
     # TODO: Update to address multiple examples case.
     def optim_func(soft_params):
@@ -133,19 +141,29 @@ def optim_real_presses_grid_search():
         mmint_utils.make_dir(out)
 
     # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer = create_simulator(num_envs, use_viewer)
+    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
+        create_simulator(num_envs, use_viewer)
 
     def optim_func(soft_params):
         # Change actor soft materials.
         for env_handle, wrist_actor_handle in zip(env_handles, wrist_actor_handles):
             soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
             soft_mat.youngs = soft_params[0]
-            soft_mat.poissons = soft_params[1]
+            soft_mat.poissons = 0.1
             gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
 
         # Run simulation with the configuration used in the real world.
         results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                               real_configs, press_zs)
+                               real_configs, press_zs, init_particle_state)
+
+        return results
+
+    # Setup soft params.
+    youngs = np.arange(1e3, 1e5 + 1, (1e5 - 1e3) / 10.0)
+    youngs_results = {young: optim_func([young]) for young in youngs}
+
+    if out is not None:
+        mmint_utils.save_gzip_pickle(youngs_results, os.path.join(out, "all_results.pkl.gzip"))
 
 
 def create_simulator(num_envs: int, use_viewer: bool = False):
@@ -174,7 +192,10 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     else:
         viewer = None
 
-    return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer
+    # Get initial config of particles.
+    init_particle_state = get_init_particle_state(gym, sim)
+
+    return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state
 
 
 def set_scene_props(num_envs, env_dim=0.1):
@@ -361,6 +382,14 @@ def extract_contact_info(gym, sim):
     return contact_points, contact_forces
 
 
+def get_init_particle_state(gym, sim):
+    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
+    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
+    gym.refresh_particle_state_tensor(sim)
+    tool_state_init = copy.deepcopy(particle_state_tensor)
+    return tool_state_init
+
+
 def extract_nodal_coords(gym, sim, particle_states):
     """
     Extract the nodal coordinates for the tool from each environment.
@@ -481,10 +510,11 @@ def get_init_particle_state(gym, sim):
     return tool_state_init
 
 
-def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
+def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, render_cameras=False):
     # Render cameras.
-    gym.step_graphics(sim)
-    gym.render_all_camera_sensors(sim)
+    if render_cameras:
+        gym.step_graphics(sim)
+        gym.render_all_camera_sensors(sim)
 
     # Get mesh deformations for all envs.
     nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
@@ -508,11 +538,6 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
         # For convenience, transform nodal coordinates to wrist frame.
         nodal_coords_wrist = utils.transform_pointcloud(nodal_coords[env_idx], np.linalg.inv(w_T_wrist))
 
-        # Get camera sensing.
-        rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
-        depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
-        seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
-
         # Get wrist wrench from contact points/forces.
         wrist_wrench = get_wrist_wrench(contact_points[env_idx], contact_forces[env_idx], wrist_pose)
 
@@ -521,13 +546,23 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor):
             "nodal_coords_wrist": nodal_coords_wrist,
             "contact_points": contact_points,
             "contact_forces": contact_forces,
-            "rgb": rgb_image,
-            "depth": depth_image,
-            "segmentation": seg_image,
             "wrist_pose": wrist_pose,
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,
         }
+
+        if render_cameras:
+            # Get camera sensing.
+            rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
+            depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
+            seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+
+            results_dict.update({
+                "rgb": rgb_image,
+                "depth": depth_image,
+                "segmentation": seg_image,
+            })
+
         results.append(results_dict)
     return results
 
@@ -540,11 +575,10 @@ def close_sim(gym, sim, viewer, use_viewer):
     print("Done!")
 
 
-def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights):
+def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state):
     # Wrap particle
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
-    tool_state_init = copy.deepcopy(particle_state_tensor)
 
     z_offset = 0.0001
     lowering_speed = -0.2  # m/s
@@ -554,16 +588,16 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
 
     results = []
-    for range_idx in range(num_rounds):
+    for range_idx in trange(num_rounds):
         round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
         round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
 
         # Reset to new config.
-        tool_state_init_ = copy.deepcopy(tool_state_init)
+        tool_state_init_ = copy.deepcopy(init_particle_state)
         tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
         start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
 
-        # Lower until in contact.
+        # Lower until each environment reaches the desired height.
         t = 0
         while True:
             t += 1
@@ -613,5 +647,5 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
 
 if __name__ == '__main__':
-    recreate_real_presses()
-    # optimize_real_press()
+    # recreate_real_presses()
+    optim_real_presses_grid_search()
