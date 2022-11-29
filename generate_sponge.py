@@ -1,4 +1,6 @@
 import argparse
+import os
+import mmint_utils
 import trimesh.creation
 from shapely.geometry import Polygon
 import shapely
@@ -21,4 +23,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     mesh = generate_sponge(args.width, args.height)
+
+    mmint_utils.make_dir(os.path.dirname(args.out_fn))
     mesh.export(args.out_fn)
