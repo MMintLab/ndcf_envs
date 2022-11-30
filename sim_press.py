@@ -647,5 +647,5 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
 
 if __name__ == '__main__':
-    # recreate_real_presses()
-    optim_real_presses_grid_search()
+    recreate_real_presses()
+    # optim_real_presses_grid_search()
