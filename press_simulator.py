@@ -253,14 +253,15 @@ def extract_contact_info(gym, sim):
     num_envs = gym.get_env_count(sim)
     contact_forces = [[]] * num_envs
     contact_points = [[]] * num_envs
+
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
-        env_index = rigid_body_index // 3
+        env_index = rigid_body_index // 3  # TODO: This is not right..
         force_vec = contact_force_mag * contact_normal
-        contact_forces[env_index].append(force_vec)
-        contact_points[env_index].append(contact[5])
+        contact_forces[env_index].append(list(force_vec))
+        contact_points[env_index].append(list(contact[5]))
 
     return contact_points, contact_forces
 
@@ -419,8 +420,8 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
         results_dict = {
             "nodal_coords": nodal_coords[env_idx],
             "nodal_coords_wrist": nodal_coords_wrist,
-            "contact_points": contact_points,
-            "contact_forces": contact_forces,
+            "contact_points": contact_points[env_idx],
+            "contact_forces": contact_forces[env_idx],
             "wrist_pose": wrist_pose,
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,

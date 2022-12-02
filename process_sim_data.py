@@ -27,12 +27,18 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
 
     # Get wrist pose.
     wrist_pose = data_dict["wrist_pose"]
-    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="sxyz")
+    w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="rxyz")
     wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
 
     # Load deformed object points.
-    def_vert_w = data_dict["nodal_coords"][0]
-    def_vert = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
+    def_vert_w = data_dict["nodal_coords"]
+    def_vert_prime = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
+    def_vert = data_dict["nodal_coords_wrist"]
+
+    plt = Plotter(shape=(1, 2))
+    plt.at(0).show(Points(def_vert_prime), vedo_utils.draw_origin())
+    plt.at(1).show(Points(def_vert), vedo_utils.draw_origin())
+    plt.interactive().close()
 
     # Load base tetra mesh of the undeformed mesh.
     tet_vert, tet_tetra = utils.load_tetmesh(base_tetra_mesh_fn)
