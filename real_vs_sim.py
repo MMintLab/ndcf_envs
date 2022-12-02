@@ -4,7 +4,7 @@ import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ncf_envs.sim_press import load_real_world_examples
+from ncf_envs.press_simulator import load_real_world_examples
 
 
 def real_vs_sim():

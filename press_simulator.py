@@ -49,123 +49,6 @@ def load_real_world_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def recreate_real_presses():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("run_dir", type=str, help="Real world data directory.")
-    parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
-    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
-    parser.add_argument("--num_envs", "-n", type=int, default=4,
-                        help="Number of environments to simultaneously simulate.")
-    args = parser.parse_args()
-    use_viewer = args.viewer
-    num_envs = args.num_envs
-
-    # Get real press info.
-    real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
-
-    # Setup out directory.
-    out = args.out
-    if out is not None:
-        mmint_utils.make_dir(out)
-
-    # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer)
-
-    # Run simulation with the configuration used in the real world.
-    start_time = time.time()
-    run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                 real_configs, press_zs, init_particle_state)
-    end_time = time.time()
-    run_time = end_time - start_time
-    print("Run time: %f" % run_time)
-
-    # Cleanup.
-    close_sim(gym, sim, viewer, use_viewer)
-
-
-def optim_real_presses_de():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("run_dir", type=str, help="Real world data directory.")
-    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
-    parser.add_argument("--num_envs", "-n", type=int, default=4,
-                        help="Number of environments to simultaneously simulate.")
-    args = parser.parse_args()
-    use_viewer = args.viewer
-
-    # Load real world run data.
-    real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
-
-    # Setup environment.
-    gym, sim, env_handle, wrist_actor_handle, camera_handle, viewer, init_particle_state = create_simulator(use_viewer)
-
-    # TODO: Update to address multiple examples case.
-    def optim_func(soft_params):
-        # Change actor soft materials.
-        soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
-        soft_mat.youngs = soft_params[0]
-        soft_mat.poissons = soft_params[1]
-        gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
-
-        # TODO: Run simulation with the configuration used in the real world.
-
-        # wrench_loss = np.linalg.norm(real_wrench - sim_wrench)
-        wrench_loss = 0.0
-        return wrench_loss
-
-    # res = scipy.optimize.differential_evolution(optim_func, [(1e3, 1e7), (0.0, 0.5)])
-    # print(res)
-    optim_func([4.39117435e+04, 3.81013133e-01])
-
-    # Cleanup.
-    close_sim(gym, sim, viewer, use_viewer)
-
-
-def optim_real_presses_grid_search():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("run_dir", type=str, help="Real world data directory.")
-    parser.add_argument("--out", "-o", type=str, default=None, help="Directory to store output.")
-    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
-    parser.add_argument("--num_envs", "-n", type=int, default=4,
-                        help="Number of environments to simultaneously simulate.")
-    args = parser.parse_args()
-    use_viewer = args.viewer
-    num_envs = args.num_envs
-
-    # Get real press info.
-    real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
-
-    # Setup out directory.
-    out = args.out
-    if out is not None:
-        mmint_utils.make_dir(out)
-
-    # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer)
-
-    def optim_func(soft_params):
-        # Change actor soft materials.
-        for env_handle, wrist_actor_handle in zip(env_handles, wrist_actor_handles):
-            soft_mat = gym.get_actor_soft_materials(env_handle, wrist_actor_handle)[0]
-            soft_mat.youngs = soft_params[0]
-            soft_mat.poissons = 0.1
-            gym.set_actor_soft_materials(env_handle, wrist_actor_handle, [soft_mat])
-
-        # Run simulation with the configuration used in the real world.
-        results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                               real_configs, press_zs, init_particle_state)
-
-        return results
-
-    # Setup soft params.
-    youngs = np.arange(1e3, 1e4 + 1, (1e4 - 1e3) / 10.0)
-    youngs_results = {young: optim_func([young]) for young in youngs}
-
-    if out is not None:
-        mmint_utils.save_gzip_pickle(youngs_results, os.path.join(out, "all_results.pkl.gzip"))
-
-
 def create_simulator(num_envs: int, use_viewer: bool = False):
     # Setup simulator.
     gym = gymapi.acquire_gym()
@@ -502,14 +385,6 @@ def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
     return wrist_wrench
 
 
-def get_init_particle_state(gym, sim):
-    # Get particle state tensor and convert to PyTorch tensor - used to track nodes of tool mesh.
-    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
-    gym.refresh_particle_state_tensor(sim)
-    tool_state_init = copy.deepcopy(particle_state_tensor)
-    return tool_state_init
-
-
 def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, render_cameras=False):
     # Render cameras.
     if render_cameras:
@@ -582,10 +457,15 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
     z_offset = 0.0001
     lowering_speed = -0.2  # m/s
+    indent_distance = 0.01
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
     num_configs = len(configs)
     num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
+    z_height_provided = z_heights is not None
+
+    if not z_height_provided:
+        z_heights = [None] * num_configs
 
     results = []
     for range_idx in trange(num_rounds):
@@ -596,6 +476,10 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
         tool_state_init_ = copy.deepcopy(init_particle_state)
         tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
         start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
+
+        if not z_height_provided:
+            for idx, start_z in enumerate(start_zs):
+                round_goal_z_heights[idx] = start_z - z_offset - indent_distance
 
         # Lower until each environment reaches the desired height.
         t = 0
@@ -644,8 +528,3 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
         results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)[:len(round_configs)]
         results.extend(results_)
     return results
-
-
-if __name__ == '__main__':
-    recreate_real_presses()
-    # optim_real_presses_grid_search()
