@@ -125,7 +125,7 @@ if __name__ == '__main__':
     # Load data fns.
     data_dir = args.data_dir
     data_fns = [f for f in os.listdir(data_dir) if "config_" in f]
-    data_fns = np.sort(data_fns)
+    data_fns.sort(key=lambda a: int(a.replace(".pkl.gzip", "").split("_")[-1]))
 
     for data_idx in range(len(data_fns)):
         data_fn = os.path.join(data_dir, data_fns[data_idx])

@@ -242,7 +242,7 @@ def get_wrist_dof_info(gym, env, wrist):
     """
     dof_states = gym.get_actor_dof_states(env, wrist, gymapi.STATE_ALL)
 
-    return dof_states["pos"], dof_states["vel"]
+    return dof_states["pos"].copy(), dof_states["vel"].copy()
 
 
 def extract_contact_info(gym, sim):
@@ -527,5 +527,6 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
         # Get results.
         results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)[:len(round_configs)]
+
         results.extend(results_)
     return results

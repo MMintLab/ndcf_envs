@@ -1,5 +1,6 @@
 import argparse
 import os.path
+import pdb
 
 import mmint_utils
 import numpy as np
@@ -20,8 +21,7 @@ def sample_sim_presses():
     num = args.num
 
     # Sample random configs to run in sim.
-    # configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
-    configs = np.array([[0.1, 0.0, 0.1]])
+    configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
 
     # Setup out directory.
     out = args.out
