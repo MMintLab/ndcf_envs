@@ -185,14 +185,7 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     contact_triangles = np.array(
         [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
 
-    # Determine average contact forces for each triangle.
-    contact_triangle_forces = np.zeros(shape=[contact_triangles.shape[0], 3])
-    for t_idx, (tri, in_contact) in enumerate(zip(triangles, contact_triangles)):
-        if in_contact:
-            contact_triangle_forces[t_idx] = (vertices_forces[tri[0]] + vertices_forces[tri[1]] + vertices_forces[
-                tri[2]]) / 3.0
-
-    return contact_vertices, contact_triangles, contact_triangle_forces
+    return contact_vertices, contact_triangles
 
 
 def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
@@ -206,8 +199,7 @@ def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, conta
     return surface_points
 
 
-def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
-                          contact_triangle_forces: np.ndarray, n: int = 1000):
+def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray, n: int = 1000):
     mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
 
     # Sample on the surface.
@@ -216,7 +208,4 @@ def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles
     # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
     contact_labels = np.array([contact_triangles[t_idx] for t_idx in triangle_idcs])
 
-    # Determine contact forces. For now, use average of forces at vertices of sampled triangle.
-    contact_forces = np.array([contact_triangle_forces[t_idx] for t_idx in triangle_idcs])
-
-    return surface_points, contact_labels, contact_forces
+    return surface_points, contact_labels
