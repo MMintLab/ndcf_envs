@@ -2,6 +2,7 @@ import argparse
 import copy
 import os
 import pdb
+from collections import defaultdict
 
 import mmint_utils
 from isaacgym import gymapi
@@ -56,15 +57,18 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     # Setup sim object.
     sim = create_sim(gym)
 
-    # Load assets.
+    # Load table/wrist asset.
+    urdf_dir = "assets"
     asset_options = set_asset_options()
-    wrist_urdf_dir = "assets"
-    wrist_asset_handle = load_assets(gym, sim, wrist_urdf_dir, ['urdf/wrist'], asset_options, fix=True, gravity=False)[
-        0]
+    asset_handles = load_assets(gym, sim, urdf_dir, ['urdf/wrist', 'urdf/table'], asset_options, fix=True,
+                                gravity=False)
+    wrist_asset_handle = asset_handles[0]
+    table_asset_handle = asset_handles[1]
 
     # Create scene.
     scene_props = set_scene_props(num_envs)
-    env_handles, wrist_actor_handles, camera_handles = create_scene(gym, sim, scene_props, wrist_asset_handle)
+    env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
+        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle)
 
     # Setup wrist control properties.
     set_wrist_ctrl_props(gym, env_handles, wrist_actor_handles, [1e9, 50], [1e9, 50])
@@ -96,7 +100,7 @@ def set_scene_props(num_envs, env_dim=0.1):
     return scene_props
 
 
-def create_scene(gym, sim, props, wrist_asset_handle):
+def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
     """
     Create scene.
     """
@@ -109,6 +113,7 @@ def create_scene(gym, sim, props, wrist_asset_handle):
     gym.add_ground(sim, plane_params)
 
     env_handles = []
+    table_actor_handles = []
     wrist_actor_handles = []
     camera_handles = []
 
@@ -117,9 +122,16 @@ def create_scene(gym, sim, props, wrist_asset_handle):
         env_handle = gym.create_env(sim, props['lower'], props['upper'], props['per_row'])
         env_handles.append(env_handle)
 
+        # Create tabletop.
+        pose = gymapi.Transform()
+        table_actor_handle = gym.create_actor(env_handle, table_asset_handle, pose, "table", group=i, filter=0,
+                                              segmentationId=1)
+        table_actor_handles.append(table_actor_handle)
+
         # Create wrist.
         pose = gymapi.Transform()
-        wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", segmentationId=1)
+        wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", group=i, filter=0,
+                                              segmentationId=1)
         wrist_actor_handles.append(wrist_actor_handle)
 
         # Create camera.
@@ -130,7 +142,7 @@ def create_scene(gym, sim, props, wrist_asset_handle):
         gym.set_camera_location(camera_handle, env_handle, gymapi.Vec3(0.5, 0.0, 0.5), gymapi.Vec3(0.0, 0.0, 0.0))
         camera_handles.append(camera_handle)
 
-    return env_handles, wrist_actor_handles, camera_handles
+    return env_handles, table_actor_handles, wrist_actor_handles, camera_handles
 
 
 def create_sim(gym):
@@ -245,25 +257,31 @@ def get_wrist_dof_info(gym, env, wrist):
     return dof_states["pos"].copy(), dof_states["vel"].copy()
 
 
-def extract_contact_info(gym, sim):
+def get_contact_info(gym, sim, rigid_body_per_env):
     """
     Extract the net force vector on the wrist.
     """
     contacts = gym.get_soft_contacts(sim)
     num_envs = gym.get_env_count(sim)
-    contact_forces = [[]] * num_envs
-    contact_points = [[]] * num_envs
+    contact_forces = defaultdict(list)
+    contact_points = defaultdict(list)
 
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
-        env_index = rigid_body_index // 3  # TODO: This is not right..
+        env_index = rigid_body_index // rigid_body_per_env
         force_vec = contact_force_mag * contact_normal
         contact_forces[env_index].append(list(force_vec))
         contact_points[env_index].append(list(contact[5]))
 
-    return contact_points, contact_forces
+    contact_forces_ = []
+    contact_points_ = []
+    for env_idx in range(num_envs):
+        contact_points_.append(contact_points[env_idx])
+        contact_forces_.append(contact_forces[env_idx])
+
+    return contact_points_, contact_forces_
 
 
 def get_init_particle_state(gym, sim):
@@ -274,7 +292,7 @@ def get_init_particle_state(gym, sim):
     return tool_state_init
 
 
-def extract_nodal_coords(gym, sim, particle_states):
+def get_nodal_coords(gym, sim, particle_states):
     """
     Extract the nodal coordinates for the tool from each environment.
 
@@ -393,10 +411,10 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
         gym.render_all_camera_sensors(sim)
 
     # Get mesh deformations for all envs.
-    nodal_coords = extract_nodal_coords(gym, sim, particle_state_tensor)
+    nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
 
     # Get contact information for all envs.
-    contact_points, contact_forces = extract_contact_info(gym, sim)
+    contact_points, contact_forces = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
 
     results = []
     for env_idx, (env, wrist, camera) in enumerate(zip(envs, wrists, cameras)):
@@ -456,7 +474,9 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
-    z_offset = 0.0001
+    table_height = 0.01
+    table_offset = 0.0001
+    z_offset = table_height + table_offset
     lowering_speed = -0.2  # m/s
     indent_distance = 0.01
     dt = gym.get_sim_params(sim).dt
@@ -480,7 +500,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - z_offset - indent_distance
+                round_goal_z_heights[idx] = start_z - table_offset - indent_distance
 
         # Lower until each environment reaches the desired height.
         t = 0

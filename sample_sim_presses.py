@@ -36,8 +36,9 @@ def sample_sim_presses():
     results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                            configs, None, init_particle_state)
 
-    for config_idx, result in enumerate(results):
-        mmint_utils.save_gzip_pickle(result, os.path.join(out, "config_%d.pkl.gzip" % config_idx))
+    if out is not None:
+        for config_idx, result in enumerate(results):
+            mmint_utils.save_gzip_pickle(result, os.path.join(out, "config_%d.pkl.gzip" % config_idx))
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
