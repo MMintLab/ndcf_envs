@@ -3,7 +3,7 @@ import mmint_utils
 import argparse
 import numpy as np
 import open3d as o3d
-from vedo import Plotter, Points, Arrows
+from vedo import Plotter, Points, Arrows, Mesh
 import utils
 import vedo_utils
 
@@ -68,26 +68,27 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
                                                                                          n=20000)
 
     # Some visualization for contact verts/tris.
-    # tri_mesh_vedo = Mesh([tri_vert, tri_triangles])
-    # contact_points_vedo = Points(contact_points, c="r")
-    # tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
-    # tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
-    # tri_mesh_vedo_contact.celldata["CellIndividualColors"] = np.array(tri_colors).astype(np.uint8)
-    # tri_mesh_vedo_contact.celldata.select("CellIndividualColors")
-    #
-    # new_points_vedo = Points(surface_points, c="b")
-    # new_contact_points_vedo = Points(surface_points[surface_contact_labels], c="r")
-    # new_point_forces_vedo = Arrows(surface_points[surface_contact_labels],
-    #                                surface_points[surface_contact_labels] + 0.01 * surface_forces[
-    #                                    surface_contact_labels])
-    #
-    # plt = Plotter(shape=(1, 2))
-    # plt.at(0).show(contact_points_vedo, tri_mesh_vedo_contact,
-    #                Arrows(contact_points, contact_points + 0.01 * contact_forces),
-    #                "Contact Points")
-    # plt.at(1).show(new_points_vedo, new_contact_points_vedo, new_point_forces_vedo,
-    #                Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
-    # plt.interactive().close()
+    if vis:
+        tri_mesh_vedo = Mesh([tri_vert, tri_triangles])
+        contact_points_vedo = Points(contact_points, c="r")
+        tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
+        tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
+        tri_mesh_vedo_contact.celldata["CellIndividualColors"] = np.array(tri_colors).astype(np.uint8)
+        tri_mesh_vedo_contact.celldata.select("CellIndividualColors")
+
+        new_points_vedo = Points(surface_points, c="b")
+        new_contact_points_vedo = Points(surface_points[surface_contact_labels], c="r")
+        new_point_forces_vedo = Arrows(surface_points[surface_contact_labels],
+                                       surface_points[surface_contact_labels] + 0.01 * surface_forces[
+                                           surface_contact_labels])
+
+        plt = Plotter(shape=(1, 2))
+        plt.at(0).show(contact_points_vedo, tri_mesh_vedo_contact,
+                       Arrows(contact_points, contact_points + 0.01 * contact_forces),
+                       "Contact Points")
+        plt.at(1).show(new_points_vedo, new_contact_points_vedo, new_point_forces_vedo,
+                       Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
+        plt.interactive().close()
 
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
