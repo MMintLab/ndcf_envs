@@ -161,8 +161,7 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
     return query_points_np, signed_distance_np
 
 
-def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray,
-                              contact_forces: np.ndarray):
+def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
     """
     Given the triangle mesh of the tool and the contact points (which are all vertices of the tool mesh),
     find the corresponding triangles in the mesh.
@@ -175,11 +174,6 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     kd_tree = KDTree(vertices)
     _, contact_points_vert_idcs = kd_tree.query(contact_points)
     contact_vertices[contact_points_vert_idcs] = True
-
-    # Get force at each vertex of mesh.
-    vertices_forces = np.zeros(shape=[len(vertices), 3])
-    for contact_pt_idx, (contact_pt, contact_force) in enumerate(zip(contact_points, contact_forces)):
-        vertices_forces[contact_points_vert_idcs[contact_pt_idx]] = contact_force
 
     # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
     contact_triangles = np.array(
@@ -199,13 +193,29 @@ def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, conta
     return surface_points
 
 
-def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray, n: int = 1000):
+def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, n: int = 1000):
     mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    mesh.fix_normals()
 
     # Sample on the surface.
     surface_points, triangle_idcs = trimesh.sample.sample_surface(mesh, count=n)
 
+    # Find normals from triangles of sampled points.
+    surface_normals = mesh.face_normals[triangle_idcs]
+
+    # Find normals using barycentric interpolation for smooth result.
+    # bary = trimesh.triangles.points_to_barycentric(triangles=mesh.triangles[triangle_idcs], points=surface_points)
+    # surface_normals = trimesh.unitize(
+    #     (mesh.vertex_normals[mesh.faces[triangle_idcs]] * trimesh.unitize(bary).reshape((-1, 3, 1))).sum(axis=1))
+
+    return surface_points, surface_normals, triangle_idcs
+
+
+def sample_surface_points_with_contact(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
+                                       n: int = 1000):
+    surface_points, surface_normals, triangle_idcs = sample_surface_points(tri_mesh, n)
+
     # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
     contact_labels = np.array([contact_triangles[t_idx] for t_idx in triangle_idcs])
 
-    return surface_points, contact_labels
+    return surface_points, surface_normals, contact_labels

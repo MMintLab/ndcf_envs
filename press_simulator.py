@@ -265,6 +265,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
     num_envs = gym.get_env_count(sim)
     contact_forces = defaultdict(list)
     contact_points = defaultdict(list)
+    contact_normals = defaultdict(list)
 
     for contact in contacts:
         rigid_body_index = contact[4]
@@ -274,14 +275,17 @@ def get_contact_info(gym, sim, rigid_body_per_env):
         force_vec = contact_force_mag * contact_normal
         contact_forces[env_index].append(list(force_vec))
         contact_points[env_index].append(list(contact[5]))
+        contact_normals[env_index].append(list(contact_normal))
 
     contact_forces_ = []
     contact_points_ = []
+    contact_normals_ = []
     for env_idx in range(num_envs):
         contact_points_.append(contact_points[env_idx])
         contact_forces_.append(contact_forces[env_idx])
+        contact_normals_.append(contact_normals[env_idx])
 
-    return contact_points_, contact_forces_
+    return contact_points_, contact_forces_, contact_normals_
 
 
 def get_init_particle_state(gym, sim):
@@ -385,6 +389,7 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
     return z_offsets
 
 
+# TODO: Add tests to make sure this works as desired.
 def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
     w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="rxyz")
     wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
@@ -414,7 +419,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
     nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
 
     # Get contact information for all envs.
-    contact_points, contact_forces = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
+    contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
 
     results = []
     for env_idx, (env, wrist, camera) in enumerate(zip(envs, wrists, cameras)):
@@ -440,6 +445,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
             "nodal_coords_wrist": nodal_coords_wrist,
             "contact_points": contact_points[env_idx],
             "contact_forces": contact_forces[env_idx],
+            "contact_normals": contact_normals[env_idx],
             "wrist_pose": wrist_pose,
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,

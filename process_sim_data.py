@@ -13,11 +13,16 @@ def vis_example_data(example_dict):
     all_points = example_dict["query_points"]
     sdf = example_dict["sdf"]
     in_contact = example_dict["in_contact"]
+    normals = example_dict["normals"]
 
-    plt = Plotter(shape=(1, 2))
+    plt = Plotter(shape=(2, 2))
     plt.at(0).show(Points(all_points), vedo_utils.draw_origin(), "All Sample Points")
     plt.at(1).show(Points(all_points[sdf <= 0.0], c="b"), Points(all_points[in_contact], c="r"),
                    vedo_utils.draw_origin(), "Occupied/Contact points")
+    plt.at(2).show(Points(all_points[sdf == 0.0], c="b"), Points(all_points[in_contact], c="r"),
+                   vedo_utils.draw_origin(), "Surface/Contact points")
+    plt.at(3).show(Points(all_points[sdf == 0.0], c="b"),
+                   Arrows(all_points[sdf == 0.0], all_points[sdf == 0.0] + 0.01 * normals[sdf == 0.0]))
     plt.interactive().close()
 
 
@@ -56,15 +61,18 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     contact_forces_w = np.array(data_dict["contact_forces"])
     contact_forces = utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
 
+    # Load contact normals.
+    contact_normals_w = np.array(data_dict["contact_normals"])
+    contact_normals = utils.transform_vectors(contact_normals_w, wrist_pose_T_w)
+
     # Get SDF values near object.
     query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh,
-                                                                          contact_points,
-                                                                          contact_forces)
-    surface_points, surface_contact_labels = utils.sample_surface_points(tri_mesh, contact_triangles,
-                                                                         n=20000)
+    contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh, contact_points)
+
+    surface_points, surface_normals, surface_contact_labels = \
+        utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
 
     # Some visualization for contact verts/tris.
     if vis:
@@ -83,6 +91,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
                        "Contact Points")
         plt.at(1).show(new_points_vedo, new_contact_points_vedo,
                        Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
+        # plt.at(2).show(contact_points_vedo, tri_mesh_vedo_contact,
+        #                Arrows(contact_points, contact_points + 0.01 * contact_normals), "Contact Normals")
         plt.interactive().close()
 
     # Build dataset.
@@ -90,15 +100,17 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
     dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool),
                                          surface_contact_labels])
+    dataset_normals = np.concatenate([np.zeros([len(query_points), 3]), contact_normals, surface_normals])
 
     assert len(dataset_query_points) == len(dataset_sdf) and len(dataset_query_points) == len(
-        dataset_in_contact) and len(dataset_query_points)
+        dataset_in_contact) and len(dataset_query_points) == len(dataset_normals)
 
     dataset_dict = {
         "n_points": len(dataset_query_points),
         "query_points": dataset_query_points,
         "sdf": dataset_sdf,
         "in_contact": dataset_in_contact,
+        "normals": dataset_normals,
     }
     if out_fn is not None:
         mmint_utils.save_gzip_pickle(dataset_dict, out_fn)
