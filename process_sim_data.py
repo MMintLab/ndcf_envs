@@ -113,6 +113,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
         "sdf": dataset_sdf,
         "in_contact": dataset_in_contact,
         "normals": dataset_normals,
+        "wrist_wrench": data_dict["wrist_wrench"]
     }
     if out_fn is not None:
         mmint_utils.save_gzip_pickle(dataset_dict, out_fn)
