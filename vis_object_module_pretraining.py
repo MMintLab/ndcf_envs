@@ -3,7 +3,7 @@ import pdb
 
 from vedo import Plotter, Points
 import mmint_utils
-import utils
+import vedo_utils
 
 
 def vis_object_module_pretraining(data_fn: str):
@@ -14,9 +14,9 @@ def vis_object_module_pretraining(data_fn: str):
     sdf = pred_dict["sdf"]
 
     plt = Plotter(shape=(1, 3))
-    plt.at(0).show(Points(query_points), utils.draw_axes(), "All Sample Points")
-    plt.at(1).show(Points(query_points[sdf <= 0.0], c="b"), utils.draw_axes(), "Occupied Points (GT)")
-    plt.at(2).show(Points(query_points[pred_sdf <= 0.0], c="b"), utils.draw_axes(), "Occupied Points (Pred)")
+    plt.at(0).show(Points(query_points), vedo_utils.draw_origin(), "All Sample Points")
+    plt.at(1).show(Points(query_points[sdf <= 0.0], c="b"), vedo_utils.draw_origin(), "Occupied Points (GT)")
+    plt.at(2).show(Points(query_points[pred_sdf <= 0.0], c="b"), vedo_utils.draw_origin(), "Occupied Points (Pred)")
     plt.interactive().close()
 
 
