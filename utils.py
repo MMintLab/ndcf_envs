@@ -179,7 +179,11 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     contact_triangles = np.array(
         [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
 
-    return contact_vertices, contact_triangles
+    # Find total area of contact patch.
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    contact_area = contact_triangles.astype(float) @ mesh.area_faces
+
+    return contact_vertices, contact_triangles, contact_area
 
 
 def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,

@@ -69,10 +69,14 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
     query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    contact_vertices, contact_triangles = utils.find_in_contact_triangles(tri_mesh, contact_points)
-
+    contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
     surface_points, surface_normals, surface_contact_labels = \
         utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
+
+    # Calculate pressure (approx) for interaction.
+    wrist_f = data_dict["wrist_wrench"][:3]
+    wrist_f_norm = np.linalg.norm(wrist_f)
+    pressure = wrist_f_norm / contact_area
 
     # Some visualization for contact verts/tris.
     if vis:
@@ -113,7 +117,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
         "sdf": dataset_sdf,
         "in_contact": dataset_in_contact,
         "normals": dataset_normals,
-        "wrist_wrench": data_dict["wrist_wrench"]
+        "wrist_wrench": data_dict["wrist_wrench"],
+        "pressure": pressure,
     }
     if out_fn is not None:
         mmint_utils.save_gzip_pickle(dataset_dict, out_fn)
