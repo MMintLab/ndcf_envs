@@ -1,5 +1,4 @@
 import argparse
-import pdb
 
 import mmint_utils
 import numpy as np

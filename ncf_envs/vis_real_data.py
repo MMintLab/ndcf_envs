@@ -1,7 +1,7 @@
 import argparse
 import real_utils
 import utils
-from vedo import Plotter, Points, Arrows, Mesh
+from vedo import Plotter, Points
 
 
 def vis_real_data(data_dir, example_name):

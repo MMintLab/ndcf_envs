@@ -1,10 +1,7 @@
-import argparse
 import copy
 import os
-import pdb
 from collections import defaultdict
 
-import mmint_utils
 from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
@@ -13,10 +10,8 @@ import transforms3d as tf3d
 import torch
 from tqdm import trange
 
-import utils
-import real_utils
-import scipy.optimize
-import time
+import ncf_envs.utils as utils
+import ncf_envs.real_utils as real_utils
 
 
 # Simulate pressing deformable tool into surface.
@@ -58,7 +53,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     sim = create_sim(gym)
 
     # Load table/wrist asset.
-    urdf_dir = "assets"
+    urdf_dir = "../assets"
     asset_options = set_asset_options()
     asset_handles = load_assets(gym, sim, urdf_dir, ['urdf/wrist', 'urdf/table'], asset_options, fix=True,
                                 gravity=False)

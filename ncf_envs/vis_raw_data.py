@@ -1,11 +1,7 @@
-import pdb
-
-from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, write
-import meshio
+from vedo import TetMesh, Plotter, Arrow, Mesh, Points, Arrows
 import mmint_utils
 import argparse
 import numpy as np
-import open3d as o3d
 import utils
 import vedo_utils
 

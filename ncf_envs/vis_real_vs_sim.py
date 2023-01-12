@@ -1,9 +1,8 @@
 import argparse
-import pdb
 
 import real_utils
 import numpy as np
-from vedo import TetMesh, Plotter, show, Arrow, Mesh, Points, Arrows, write
+from vedo import Plotter, Arrow, Points
 
 import mmint_utils
 
