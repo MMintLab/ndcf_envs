@@ -26,7 +26,7 @@ def vis_example_data(example_dict):
     plt.interactive().close()
 
 
-def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
+def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -112,16 +112,23 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_fn, vis=False):
         dataset_in_contact) and len(dataset_query_points) == len(dataset_normals)
 
     dataset_dict = {
-        "n_points": len(dataset_query_points),
-        "query_points": dataset_query_points,
-        "sdf": dataset_sdf,
-        "in_contact": dataset_in_contact,
-        "normals": dataset_normals,
-        "wrist_wrench": data_dict["wrist_wrench"],
-        "pressure": pressure,
+        "train": {
+            "n_points": len(dataset_query_points),
+            "query_points": dataset_query_points,
+            "sdf": dataset_sdf,
+            "in_contact": dataset_in_contact,
+            "normals": dataset_normals,
+            "wrist_wrench": data_dict["wrist_wrench"],
+            "pressure": pressure,
+        },
+        "test": {
+            "surface_points": surface_points,
+            "surface_in_contact": surface_contact_labels,
+        }
     }
-    if out_fn is not None:
-        mmint_utils.save_gzip_pickle(dataset_dict, out_fn)
+    if out_dir is not None:
+        mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
+        o3d.io.write_triangle_mesh(os.path.join(out_dir, example_name + "_mesh.obj"), tri_mesh)
 
     if vis:
         vis_example_data(dataset_dict)
@@ -142,6 +149,6 @@ if __name__ == '__main__':
 
     for data_idx in trange(len(data_fns)):
         data_fn = os.path.join(data_dir, data_fns[data_idx])
-        out_fn_ = os.path.join(data_dir, "out_%d.pkl.gzip" % data_idx)
+        example_name_ = "out_%d" % data_idx
 
-        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, out_fn_, vis=args.vis)
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir, example_name_, vis=args.vis)
