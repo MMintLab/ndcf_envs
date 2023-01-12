@@ -1,7 +1,7 @@
 import argparse
 import mmint_utils
 
-from press_simulator import *
+from ncf_envs.press_simulator import *
 
 
 def optim_real_presses_de():
@@ -82,7 +82,7 @@ def optim_real_presses_grid_search():
         return results
 
     # Setup soft params.
-    youngs = np.arange(1e3, 1e4 + 1, (1e4 - 1e3) / 10.0)
+    youngs = np.arange(1e4, 3e4 + 1, (3e4 - 1e3) / 10.0)
     youngs_results = {young: optim_func([young]) for young in youngs}
 
     if out is not None:

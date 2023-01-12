@@ -53,7 +53,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     sim = create_sim(gym)
 
     # Load table/wrist asset.
-    urdf_dir = "../assets"
+    urdf_dir = "assets"
     asset_options = set_asset_options()
     asset_handles = load_assets(gym, sim, urdf_dir, ['urdf/wrist', 'urdf/table'], asset_options, fix=True,
                                 gravity=False)
