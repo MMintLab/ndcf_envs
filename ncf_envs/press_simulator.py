@@ -34,7 +34,7 @@ def load_real_world_examples(run_dir):
 
         # Find final z height of press.
         ee_pose = real_dict["proprioception"]["ee_pose"][0]
-        table_height = 0.21
+        table_height = 0.21  # TODO: Parameterize.
         press_z = ee_pose[0][2] - table_height
         press_zs.append(press_z)
 
@@ -105,6 +105,7 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
     plane_params.segmentation_id = 1
     plane_params.static_friction = 1
     plane_params.dynamic_friction = 1
+    plane_params.distance = 0.01
     gym.add_ground(sim, plane_params)
 
     env_handles = []
@@ -474,9 +475,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
-    table_height = 0.01
     table_offset = 0.0001
-    z_offset = table_height + table_offset
+    z_offset = table_offset
     lowering_speed = -0.2  # m/s
     indent_distance = 0.01
     dt = gym.get_sim_params(sim).dt

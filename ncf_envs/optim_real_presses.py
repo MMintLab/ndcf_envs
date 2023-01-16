@@ -53,11 +53,6 @@ def optim_real_presses_grid_search():
     # Get real press info.
     real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
 
-    # Add table height. TODO: Fix this.
-    table_height = 0.01
-    for idx in range(len(press_zs)):
-        press_zs[idx] += table_height
-
     # Setup out directory.
     out = args.out
     if out is not None:
@@ -82,7 +77,7 @@ def optim_real_presses_grid_search():
         return results
 
     # Setup soft params.
-    youngs = np.arange(1e4, 3e4 + 1, (3e4 - 1e3) / 10.0)
+    youngs = np.arange(1e3, 2e4 + 1.0, 1e3)
     youngs_results = {young: optim_func([young]) for young in youngs}
 
     if out is not None:
