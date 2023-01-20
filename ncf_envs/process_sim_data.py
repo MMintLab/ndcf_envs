@@ -1,4 +1,5 @@
 import os
+
 import mmint_utils
 import argparse
 import numpy as np
@@ -7,27 +8,77 @@ from tqdm import trange
 from vedo import Plotter, Points, Arrows, Mesh
 import utils
 import vedo_utils
+import matplotlib.pyplot as plt
 
 
 def vis_example_data(example_dict):
-    all_points = example_dict["query_points"]
-    sdf = example_dict["sdf"]
-    in_contact = example_dict["in_contact"]
-    normals = example_dict["normals"]
+    all_points = example_dict["train"]["query_points"]
+    sdf = example_dict["train"]["sdf"]
+    in_contact = example_dict["train"]["in_contact"]
+    normals = example_dict["train"]["normals"]
 
-    plt = Plotter(shape=(2, 2))
-    plt.at(0).show(Points(all_points), vedo_utils.draw_origin(), "All Sample Points")
-    plt.at(1).show(Points(all_points[sdf <= 0.0], c="b"), Points(all_points[in_contact], c="r"),
-                   vedo_utils.draw_origin(), "Occupied/Contact points")
-    plt.at(2).show(Points(all_points[sdf == 0.0], c="b"), Points(all_points[in_contact], c="r"),
-                   vedo_utils.draw_origin(), "Surface/Contact points")
-    plt.at(3).show(Points(all_points[sdf == 0.0], c="b"),
-                   Arrows(all_points[sdf == 0.0], all_points[sdf == 0.0] + 0.01 * normals[sdf == 0.0]))
-    plt.interactive().close()
+    vedo_plt = Plotter(shape=(2, 2))
+    vedo_plt.at(0).show(Points(all_points), vedo_utils.draw_origin(), "All Sample Points")
+    vedo_plt.at(1).show(Points(all_points[sdf <= 0.0], c="b"), Points(all_points[in_contact], c="r"),
+                        vedo_utils.draw_origin(), "Occupied/Contact points")
+    vedo_plt.at(2).show(Points(all_points[sdf == 0.0], c="b"), Points(all_points[in_contact], c="r"),
+                        vedo_utils.draw_origin(), "Surface/Contact points")
+    vedo_plt.at(3).show(Points(all_points[sdf == 0.0], c="b"),
+                        Arrows(all_points[sdf == 0.0], all_points[sdf == 0.0] + 0.01 * normals[sdf == 0.0]))
+    vedo_plt.interactive().close()
+
+
+def vis_images(rgb, depth, segmentation):
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+    ax1.axis("off")
+    ax1.imshow(rgb)
+    ax2.axis("off")
+    ax2.imshow(depth)
+    ax3.axis("off")
+    ax3.imshow(segmentation)
+    plt.show()
+
+
+def vis_partial_pc(gt_mesh, partial_pc_data):
+    vedo_plt = Plotter(shape=(1, len(partial_pc_data)))
+    vedo_mesh = Mesh([gt_mesh.vertices, gt_mesh.triangles])
+    for idx in range(len(partial_pc_data)):
+        pc_data = partial_pc_data[idx]
+        pc_vedo = Points(pc_data["pointcloud"])
+        vedo_plt.at(idx).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo)
+    vedo_plt.interactive().close()
+
+
+def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentation, env_origin):
+    view_matrix_centered = view_matrix.T
+    vinv = np.linalg.inv(view_matrix_centered)
+    vinv[:3, 3] -= env_origin
+
+    fu = 2.0 / projection_matrix[0, 0]
+    fv = 2.0 / projection_matrix[1, 1]
+
+    width = depth.shape[1]
+    centerU = width / 2
+    height = depth.shape[0]
+    centerV = height / 2
+
+    points = []
+    for i in range(width):
+        for j in range(height):
+            if tool_segmentation[j, i]:
+                u = -(i - centerU) / width
+                v = (j - centerV) / height
+                d = depth[j, i]
+                x2 = [d * fu * u, d * fv * v, d, 1]
+                p2 = vinv @ x2
+                points.append(p2[:3])
+
+    return np.array(points)
 
 
 def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
+    env_origin = data_dict["env_origin"]
 
     # Get wrist pose.
     wrist_pose = data_dict["wrist_pose"]
@@ -100,6 +151,33 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         plt.at(2).show(contact_points_vedo, tri_mesh_vedo_contact,
                        contact_normals_vedo, "Contact Normals")
         plt.interactive().close()
+
+    # Load and process partial views from cameras.
+    camera_output = data_dict["cameras"]
+    partial_pc_data = []
+    for camera_out in camera_output:
+        rgb = camera_out["rgb"]
+        depth = camera_out["depth"]
+        segmentation = camera_out["segmentation"]
+        tool_segmentation = np.logical_and(segmentation == 0, np.logical_not(np.isinf(depth)))
+        # vis_images(rgb, depth, tool_segmentation)
+
+        # Deproject pointcloud to wrist frame.
+        projection_matrix = camera_out["camera_proj_matrix"]
+        camera_view_matrix = camera_out["camera_view_matrix"]
+        pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation, env_origin)
+
+        # plt = Plotter(shape=(1, 1))
+        # plt.at(0).show(Points(pointcloud), vedo_utils.draw_origin())
+        # plt.interactive().close()
+
+        pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
+
+        partial_pc_data.append({
+            "pointcloud": pointcloud,
+        })
+    # print(partial_pc_data)
+    vis_partial_pc(tri_mesh, partial_pc_data)
 
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])

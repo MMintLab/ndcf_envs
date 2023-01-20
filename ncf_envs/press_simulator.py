@@ -130,13 +130,23 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
                                               segmentationId=1)
         wrist_actor_handles.append(wrist_actor_handle)
 
-        # Create camera.
-        camera_props = gymapi.CameraProperties()
-        camera_props.width = 512
-        camera_props.height = 512
-        camera_handle = gym.create_camera_sensor(env_handle, camera_props)
-        gym.set_camera_location(camera_handle, env_handle, gymapi.Vec3(0.5, 0.0, 0.5), gymapi.Vec3(0.0, 0.0, 0.0))
-        camera_handles.append(camera_handle)
+        # Create cameras.
+        camera_1_pose = [0.2, 0.0, 0.1 + np.random.random() * 0.2]
+        camera_2_pose = [0.2, 0.2, 0.1 + np.random.random() * 0.2]
+        camera_3_pose = [0.2, -0.2, 0.1 + np.random.random() * 0.2]
+        env_camera_handles = []
+        for camera_pose in [camera_1_pose, camera_2_pose, camera_3_pose]:
+            camera_props = gymapi.CameraProperties()
+            camera_props.width = 512
+            camera_props.height = 512
+            camera_handle = gym.create_camera_sensor(env_handle, camera_props)
+            gym.set_camera_location(camera_handle, env_handle,
+                                    gymapi.Vec3(camera_pose[0], camera_pose[1], camera_pose[2]),
+                                    gymapi.Vec3(-0.01 + np.random.random() * 0.02,
+                                                -0.01 + np.random.random() * 0.02,
+                                                -0.01 + np.random.random() * 0.02))
+            env_camera_handles.append(camera_handle)
+        camera_handles.append(env_camera_handles)
 
     return env_handles, table_actor_handles, wrist_actor_handles, camera_handles
 
@@ -404,6 +414,11 @@ def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
     return wrist_wrench
 
 
+def gym_transform_to_array(transform):
+    return np.array(
+        [transform.p.x, transform.p.y, transform.p.z, transform.r.w, transform.r.x, transform.r.y, transform.r.z])
+
+
 def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, render_cameras=False):
     # Render cameras.
     if render_cameras:
@@ -417,7 +432,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
     contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
 
     results = []
-    for env_idx, (env, wrist, camera) in enumerate(zip(envs, wrists, cameras)):
+    for env_idx, (env, wrist) in enumerate(zip(envs, wrists)):
         gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
         gym.draw_env_soft_contacts(viewer, env, gymapi.Vec3(0.6, 0.0, 0.6), 0.05, False, True)
 
@@ -435,6 +450,9 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
         # Get wrist wrench from contact points/forces.
         wrist_wrench = get_wrist_wrench(contact_points[env_idx], contact_forces[env_idx], wrist_pose)
 
+        # Get env origin.
+        env_origin = gym.get_env_origin(env)
+
         results_dict = {
             "nodal_coords": nodal_coords[env_idx],
             "nodal_coords_wrist": nodal_coords_wrist,
@@ -444,18 +462,36 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
             "wrist_pose": wrist_pose,
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,
+            "env_origin": np.array([env_origin.x, env_origin.y, env_origin.z]),
         }
 
         if render_cameras:
-            # Get camera sensing.
-            rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
-            depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
-            seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+            num_cameras = len(cameras[env_idx])
+
+            camera_output = []
+            for cam_idx in range(num_cameras):
+                camera = cameras[env_idx][cam_idx]
+
+                # Get camera sensing.
+                rgb_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_COLOR).reshape(512, 512, 4)
+                depth_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_DEPTH)
+                seg_image = gym.get_camera_image(sim, env, camera, gymapi.IMAGE_SEGMENTATION)
+                camera_proj_matrix = gym.get_camera_proj_matrix(sim, env, camera)
+                camera_transform = gym.get_camera_transform(sim, env, camera)
+                camera_view_matrix = gym.get_camera_view_matrix(sim, env, camera)
+
+                camera_output.append({
+                    "rgb": rgb_image,
+                    "depth": depth_image,
+                    "segmentation": seg_image,
+                    "camera_proj_matrix": camera_proj_matrix,
+                    "camera_transform": gym_transform_to_array(camera_transform),
+                    "camera_view_matrix": camera_view_matrix,
+                    "camera_fov": 5.0,
+                })
 
             results_dict.update({
-                "rgb": rgb_image,
-                "depth": depth_image,
-                "segmentation": seg_image,
+                "cameras": camera_output
             })
 
         results.append(results_dict)
@@ -546,7 +582,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 gym.clear_lines(viewer)
 
         # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor)[:len(round_configs)]
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)[
+                   :len(round_configs)]
 
         results.extend(results_)
     return results
