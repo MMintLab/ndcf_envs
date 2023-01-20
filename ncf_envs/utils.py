@@ -40,6 +40,11 @@ def transform_pointcloud(pointcloud, T):
         return np.asarray(pointcloud_pcd.points)
 
 
+def save_pointcloud(pointcloud, fn: str):
+    pointcloud_pcd: o3d.geometry.PointCloud = pointcloud_to_o3d(pointcloud)
+    o3d.io.write_point_cloud(fn, pointcloud_pcd)
+
+
 def transform_vectors(vectors, T):
     """
     Transform vectors (i.e., just apply rotation) from given matrix transformation T.
