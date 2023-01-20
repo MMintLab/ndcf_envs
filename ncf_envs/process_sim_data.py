@@ -39,17 +39,24 @@ def vis_images(rgb, depth, segmentation):
     plt.show()
 
 
-def vis_partial_pc(gt_mesh, partial_pc_data):
-    vedo_plt = Plotter(shape=(1, len(partial_pc_data)))
+def vis_partial_pc(gt_mesh, partial_pc_data, combined_pc):
+    vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
     vedo_mesh = Mesh([gt_mesh.vertices, gt_mesh.triangles])
+    poses_vis = []
     for idx in range(len(partial_pc_data)):
         pc_data = partial_pc_data[idx]
         pc_vedo = Points(pc_data["pointcloud"])
-        vedo_plt.at(idx).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo)
+        pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
+        poses_vis.append(pose_vis)
+        vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
+    vedo_plt.at(0).show(vedo_utils.draw_origin(), vedo_mesh, Points(combined_pc), *poses_vis)
     vedo_plt.interactive().close()
 
 
 def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentation, env_origin):
+    """
+    Based somewhat on https://gist.github.com/gavrielstate/8c855eb3b4b1f23e2990bc02c534792e
+    """
     view_matrix_centered = view_matrix.T
     vinv = np.linalg.inv(view_matrix_centered)
     vinv[:3, 3] -= env_origin
@@ -155,6 +162,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     # Load and process partial views from cameras.
     camera_output = data_dict["cameras"]
     partial_pc_data = []
+    combined_pointcloud = []
     for camera_out in camera_output:
         rgb = camera_out["rgb"]
         depth = camera_out["depth"]
@@ -167,17 +175,22 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         camera_view_matrix = camera_out["camera_view_matrix"]
         pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation, env_origin)
 
-        # plt = Plotter(shape=(1, 1))
-        # plt.at(0).show(Points(pointcloud), vedo_utils.draw_origin())
-        # plt.interactive().close()
+        # Get camera pose w.r.t. wrist.
+        c_T_w = camera_view_matrix.T
+        w_T_c = np.linalg.inv(c_T_w)
+        wrist_pose_T_c = wrist_pose_T_w @ w_T_c
+        cam_wrist_pose = utils.matrix_to_pose(wrist_pose_T_c)
 
         pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
 
+        combined_pointcloud.append(pointcloud)
         partial_pc_data.append({
             "pointcloud": pointcloud,
+            "camera_pose": cam_wrist_pose,
         })
-    # print(partial_pc_data)
-    vis_partial_pc(tri_mesh, partial_pc_data)
+    combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
+    if vis:
+        vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
 
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
@@ -202,7 +215,11 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         "test": {
             "surface_points": surface_points,
             "surface_in_contact": surface_contact_labels,
-        }
+        },
+        "input": {
+            "pointclouds": partial_pc_data,
+            "combined_pointcloud": combined_pointcloud,
+        },
     }
     if out_dir is not None:
         mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
