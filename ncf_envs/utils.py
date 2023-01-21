@@ -134,7 +134,7 @@ def load_tetmesh(meshfn):
 
 
 def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n_off_surface: int = 10000,
-                   noise: float = 0.004):
+                   noise: float = 0.004, bound_extend: float = 0.03):
     """
     Calculate SDF points for the given triangle mesh.
 
@@ -146,16 +146,22 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
     _ = scene.add_triangles(tri_mesh_legacy)
 
     # Get SDF query points around mesh surface.
-    min_bounds = np.array(tri_mesh.get_min_bound())
-    max_bounds = np.array(tri_mesh.get_max_bound())
-    min_bounds -= 0.03
-    max_bounds += 0.03
-    query_points_random = min_bounds + (np.random.random((n_random, 3)) * (max_bounds - min_bounds))
+    if n_random > 0:
+        min_bounds = np.array(tri_mesh.get_min_bound())
+        max_bounds = np.array(tri_mesh.get_max_bound())
+        min_bounds -= bound_extend
+        max_bounds += bound_extend
+        query_points_random = min_bounds + (np.random.random((n_random, 3)) * (max_bounds - min_bounds))
+    else:
+        query_points_random = np.empty([0, 3], dtype=float)
 
     # Get SDF query points by sampling surface points and adding small amount of gaussian noise.
-    query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface)
-    query_points_surface = np.asarray(query_points_surface.points)
-    query_points_surface += np.random.normal(0.0, noise, size=query_points_surface.shape)
+    if n_off_surface > 0:
+        query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface)
+        query_points_surface = np.asarray(query_points_surface.points)
+        query_points_surface += np.random.normal(0.0, noise, size=query_points_surface.shape)
+    else:
+        query_points_surface = np.empty([0, 3], dtype=float)
 
     # Compute SDF to surface.
     query_points_np = np.concatenate([query_points_random, query_points_surface])

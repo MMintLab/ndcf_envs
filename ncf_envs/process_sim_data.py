@@ -28,6 +28,13 @@ def vis_example_data(example_dict):
     vedo_plt.interactive().close()
 
 
+def vis_occupancy_data(points_iou, occ_tgt):
+    vedo_plt = Plotter(shape=(1, 2))
+    vedo_plt.at(0).show(Points(points_iou), vedo_utils.draw_origin(), "All Sample Points")
+    vedo_plt.at(1).show(Points(points_iou[occ_tgt]), vedo_utils.draw_origin(), "Occupied Points")
+    vedo_plt.interactive().close()
+
+
 def vis_images(rgb, depth, segmentation):
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
     ax1.axis("off")
@@ -192,6 +199,12 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     if vis:
         vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
 
+    # Generate ground truth occupancy values.
+    points_iou, sdf_iou = utils.get_sdf_values(tri_mesh, 100000, n_off_surface=0, bound_extend=0.01)
+    occ_tgt = sdf_iou <= 0.0
+    if vis:
+        vis_occupancy_data(points_iou, occ_tgt)
+
     # Build dataset.
     dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
     dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
@@ -215,6 +228,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         "test": {
             "surface_points": surface_points,
             "surface_in_contact": surface_contact_labels,
+            "points_iou": points_iou,
+            "occ_tgt": occ_tgt,
         },
         "input": {
             "pointclouds": partial_pc_data,
