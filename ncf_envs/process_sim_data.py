@@ -92,7 +92,6 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
 
 def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
-    env_origin = data_dict["env_origin"]
 
     # Get wrist pose.
     wrist_pose = data_dict["wrist_pose"]
@@ -167,37 +166,43 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         plt.interactive().close()
 
     # Load and process partial views from cameras.
-    camera_output = data_dict["cameras"]
-    partial_pc_data = []
-    combined_pointcloud = []
-    for camera_out in camera_output:
-        rgb = camera_out["rgb"]
-        depth = camera_out["depth"]
-        segmentation = camera_out["segmentation"]
-        tool_segmentation = np.logical_and(segmentation == 0, np.logical_not(np.isinf(depth)))
-        # vis_images(rgb, depth, tool_segmentation)
+    if "cameras" in data_dict:
+        camera_output = data_dict["cameras"]
+        env_origin = data_dict["env_origin"]
+        partial_pc_data = []
+        combined_pointcloud = []
+        for camera_out in camera_output:
+            rgb = camera_out["rgb"]
+            depth = camera_out["depth"]
+            segmentation = camera_out["segmentation"]
+            tool_segmentation = np.logical_and(segmentation == 0, np.logical_not(np.isinf(depth)))
+            vis_images(rgb, depth, tool_segmentation)
 
-        # Deproject pointcloud to wrist frame.
-        projection_matrix = camera_out["camera_proj_matrix"]
-        camera_view_matrix = camera_out["camera_view_matrix"]
-        pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation, env_origin)
+            # Deproject pointcloud to wrist frame.
+            projection_matrix = camera_out["camera_proj_matrix"]
+            camera_view_matrix = camera_out["camera_view_matrix"]
+            pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation,
+                                               env_origin)
 
-        # Get camera pose w.r.t. wrist.
-        c_T_w = camera_view_matrix.T
-        w_T_c = np.linalg.inv(c_T_w)
-        wrist_pose_T_c = wrist_pose_T_w @ w_T_c
-        cam_wrist_pose = utils.matrix_to_pose(wrist_pose_T_c)
+            # Get camera pose w.r.t. wrist.
+            c_T_w = camera_view_matrix.T
+            w_T_c = np.linalg.inv(c_T_w)
+            wrist_pose_T_c = wrist_pose_T_w @ w_T_c
+            cam_wrist_pose = utils.matrix_to_pose(wrist_pose_T_c)
 
-        pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
+            pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
 
-        combined_pointcloud.append(pointcloud)
-        partial_pc_data.append({
-            "pointcloud": pointcloud,
-            "camera_pose": cam_wrist_pose,
-        })
-    combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-    if vis:
-        vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
+            combined_pointcloud.append(pointcloud)
+            partial_pc_data.append({
+                "pointcloud": pointcloud,
+                "camera_pose": cam_wrist_pose,
+            })
+        combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
+        if vis:
+            vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
+    else:
+        partial_pc_data = []
+        combined_pointcloud = np.empty([0, 3])
 
     # Generate ground truth occupancy values.
     points_iou, sdf_iou = utils.get_sdf_values(tri_mesh, 100000, n_off_surface=0, bound_extend=0.01)
