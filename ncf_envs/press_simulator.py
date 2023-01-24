@@ -45,7 +45,7 @@ def load_real_world_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def create_simulator(num_envs: int, use_viewer: bool = False):
+def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s : dict = None):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -63,7 +63,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     # Create scene.
     scene_props = set_scene_props(num_envs)
     env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
-        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle)
+        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle, cfg_s)
 
     # Setup wrist control properties.
     set_wrist_ctrl_props(gym, env_handles, wrist_actor_handles, [1e9, 50], [1e9, 50])
@@ -95,17 +95,19 @@ def set_scene_props(num_envs, env_dim=0.1):
     return scene_props
 
 
-def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
+def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle, cfg_s):
     """
     Create scene.
     """
     # Add plane.
     plane_params = gymapi.PlaneParams()
-    plane_params.normal = gymapi.Vec3(0.0, 0.0, 1.0)
-    plane_params.segmentation_id = 1
-    plane_params.static_friction = 1
-    plane_params.dynamic_friction = 1
-    plane_params.distance = 0.01
+    plane_params.normal = gymapi.Vec3(cfg_s["plane"]["normal"][0],
+                                      cfg_s["plane"]["normal"][1],
+                                      cfg_s["plane"]["normal"][2])
+    plane_params.segmentation_id = cfg_s["plane"]["segmentation_id"]
+    plane_params.static_friction = cfg_s["plane"]["static_friction"]
+    plane_params.dynamic_friction = cfg_s["plane"]["dynamic_friction"]
+    plane_params.distance = cfg_s["plane"]["distance"]
     gym.add_ground(sim, plane_params)
 
     env_handles = []
@@ -120,14 +122,28 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
 
         # Create tabletop.
         pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(cfg_s["table"]["pose"]["x"],
+                             cfg_s["table"]["pose"]["y"],
+                             cfg_s["table"]["pose"]["z"])
+        pose.r = gymapi.Quat(cfg_s["table"]["pose"]["qx"],
+                             cfg_s["table"]["pose"]["qy"],
+                             cfg_s["table"]["pose"]["qz"],
+                             cfg_s["table"]["pose"]["qw"])
         table_actor_handle = gym.create_actor(env_handle, table_asset_handle, pose, "table", group=i, filter=0,
-                                              segmentationId=1)
+                                              segmentationId=cfg_s["table"]["segmentation_id"])
         table_actor_handles.append(table_actor_handle)
 
         # Create wrist.
         pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(cfg_s["wrist"]["pose"]["x"],
+                             cfg_s["wrist"]["pose"]["y"],
+                             cfg_s["wrist"]["pose"]["z"])
+        pose.r = gymapi.Quat(cfg_s["wrist"]["pose"]["qx"],
+                             cfg_s["wrist"]["pose"]["qy"],
+                             cfg_s["wrist"]["pose"]["qz"],
+                             cfg_s["wrist"]["pose"]["qw"])
         wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", group=i, filter=0,
-                                              segmentationId=1)
+                                              segmentationId=cfg_s["wrist"]["segmentation_id"])
         wrist_actor_handles.append(wrist_actor_handle)
 
         # Create cameras.

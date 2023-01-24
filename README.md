@@ -38,3 +38,8 @@ python ncf_envs/process_sim_data.py <output directory used by simulator> <path t
 ```
 
 Default path for sponge is: `assets/meshes/sponge/sponge_2/sponge_2.tet`
+
+### Random Terrain Generation
+```angular2html
+python ncf_envs/sample_sim_presses_terrain.py -o output/ -n 8 -e 8 -v --cfg_s cfg/scene_terrain.yaml
+```
