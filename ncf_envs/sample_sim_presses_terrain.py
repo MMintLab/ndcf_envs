@@ -3,7 +3,8 @@ from press_simulator import *
 import argparse
 import mmint_utils
 from isaacgym.terrain_utils import *
-from cfg.terrain import TerrainConfig as TC
+from cfg.terrain import DiscreteTerrainConfig as DTC
+from cfg.terrain import WaveTerrainConfig as WTC
 from terrain_utils import *
 
 
@@ -35,11 +36,12 @@ def sample_sim_presses():
 
     # Setup environment.
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer, cfg_s)
+        create_simulator(num_envs, use_viewer, cfg_s, urdfs = ['urdf/wrist', 'urdf/table_fake'])
 
     # Random terrain
     # TODO : add variety of terrain types
-    add_discrete_obstacles_terrain(gym, sim, TC())
+    # add_discrete_obstacles_terrain(gym, sim, DTC())
+    add_wave_terrain(gym, sim, WTC())
 
 
     # Run simulation with sampled configurations.

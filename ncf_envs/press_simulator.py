@@ -45,7 +45,7 @@ def load_real_world_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s : dict = None):
+def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s : dict = None, urdfs : list = ['urdf/wrist', 'urdf/table']):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -55,7 +55,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s : dict = Non
     # Load table/wrist asset.
     urdf_dir = "assets"
     asset_options = set_asset_options()
-    asset_handles = load_assets(gym, sim, urdf_dir, ['urdf/wrist', 'urdf/table'], asset_options, fix=True,
+    asset_handles = load_assets(gym, sim, urdf_dir, urdfs, asset_options, fix=True,
                                 gravity=False)
     wrist_asset_handle = asset_handles[0]
     table_asset_handle = asset_handles[1]
@@ -288,7 +288,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
     contact_forces = defaultdict(list)
     contact_points = defaultdict(list)
     contact_normals = defaultdict(list)
-
+    print("get contact info", contacts)
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
@@ -445,8 +445,8 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
     nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
 
     # Get contact information for all envs.
-    contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
 
+    contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
     results = []
     for env_idx, (env, wrist) in enumerate(zip(envs, wrists)):
         gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)

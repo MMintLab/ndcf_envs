@@ -20,3 +20,19 @@ def add_discrete_obstacles_terrain(gym, sim, tc):
     tm_params.transform.p.x = tc.transform_xyz[0]
     tm_params.transform.p.y = tc.transform_xyz[1]
     gym.add_triangle_mesh(sim, vertices.flatten(), triangles.flatten(), tm_params)
+
+
+def add_wave_terrain(gym, sim, tc):
+    tc.heightfield[0:tc.num_rows, :] = wave_terrain(new_sub_terrain(tc),
+                                                    num_waves= tc.num_waves,
+                                                    amplitude= tc.amplitude).height_field_raw
+
+    vertices, triangles = convert_heightfield_to_trimesh(tc.heightfield, horizontal_scale=tc.horizontal_scale,
+                                                         vertical_scale=tc.vertical_scale, slope_threshold=3)
+    tm_params = gymapi.TriangleMeshParams()
+    tm_params.nb_vertices = vertices.shape[0]
+    tm_params.nb_triangles = triangles.shape[0]
+    tm_params.transform.p.x = tc.transform_xyz[0]
+    tm_params.transform.p.y = tc.transform_xyz[1]
+    tm_params.transform.p.z = tc.transform_xyz[2]
+    gym.add_triangle_mesh(sim, vertices.flatten(), triangles.flatten(), tm_params)
