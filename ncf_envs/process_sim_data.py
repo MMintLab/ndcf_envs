@@ -176,7 +176,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
             depth = camera_out["depth"]
             segmentation = camera_out["segmentation"]
             tool_segmentation = np.logical_and(segmentation == 0, np.logical_not(np.isinf(depth)))
-            vis_images(rgb, depth, tool_segmentation)
+            # vis_images(rgb, depth, tool_segmentation)
 
             # Deproject pointcloud to wrist frame.
             projection_matrix = camera_out["camera_proj_matrix"]
