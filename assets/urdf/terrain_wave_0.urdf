@@ -1,0 +1,31 @@
+<robot name="table">
+
+    <link name="world">
+    </link>
+
+    <joint name="world_to_table" type="fixed">
+        <parent link="world"/>
+        <child link="terrain"/>
+    </joint>
+
+    <link name="table">
+        <visual>
+			<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+			<geometry>
+				<mesh filename="meshes/terrain/terrain_wave_0.obj"/>
+			</geometry>
+		</visual>
+		<collision>
+			<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+			<geometry>
+				<mesh filename="meshes/terrain/terrain_wave_0.obj"/>
+			</geometry>
+		</collision>
+		<inertial>
+			<origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0"/>
+			<mass value="1"/>
+            <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0.0" ixz="0.0" iyz="0.0"/>
+		</inertial>
+    </link>
+
+</robot>
