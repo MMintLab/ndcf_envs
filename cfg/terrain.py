@@ -19,8 +19,6 @@ class DiscreteTerrainConfig():
         self.num_cols = int(self.terrain_length/self.horizontal_scale)
         self.heightfield = np.zeros((self.num_terrains*self.num_rows, self.num_cols), dtype=np.int16)
 
-        self.indent_distance = 0.01
-
 class WaveTerrainConfig():
     def __init__(self):
         self.num_terrains = 1
@@ -36,5 +34,3 @@ class WaveTerrainConfig():
         self.num_rows = int(self.terrain_width / self.horizontal_scale)
         self.num_cols = int(self.terrain_length / self.horizontal_scale)
         self.heightfield = np.zeros((self.num_terrains * self.num_rows, self.num_cols), dtype=np.int16)
-
-        self.indent_distance =  0.015

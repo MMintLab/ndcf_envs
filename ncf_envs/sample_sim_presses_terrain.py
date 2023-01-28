@@ -47,13 +47,13 @@ def sample_sim_presses(i, type = 'discrete'):
 
     # Run simulation with sampled configurations.
     run_sim_loop_v2(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                           configs, None, init_particle_state, out_folder, cfg_s)
+                           configs, None, init_particle_state, out_folder)
 
 
 if __name__ == '__main__':
     N = 10
-    i = 6
-    type = 'wave' # 'discrete'
+    i = 0
+    type = 'wave'
     while i < N:
         sample_sim_presses(i, type)
         i += 1

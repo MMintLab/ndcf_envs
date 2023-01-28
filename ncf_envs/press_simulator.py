@@ -642,7 +642,7 @@ def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - 0.05 # Any large value would do.
+                round_goal_z_heights[idx] = start_z - table_offset -0.02 # Any large value would do.
 
         # Lower until each environment reaches the desired height.
         t = 0
@@ -682,7 +682,7 @@ def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs
                     contact_flag = True
 
                     ## Set new desired pose.
-                    round_goal_z_heights[idx] = curr_z - cfg_s.indent_distance
+                    round_goal_z_heights[idx] = curr_z - 0.01
 
 
             if complete:
