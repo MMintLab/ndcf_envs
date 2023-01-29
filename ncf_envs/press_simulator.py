@@ -47,7 +47,8 @@ def load_real_world_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s : dict = None, urdfs : list = ['urdf/wrist', 'urdf/table']):
+def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None,
+                     urdfs: list = ['urdf/wrist', 'urdf/table']):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -294,7 +295,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
-        env_index = rigid_body_index // rigid_body_per_env
+        env_index = rigid_body_index // rigid_body_per_env  # TODO: This won't work for multiple envs.
         force_vec = contact_force_mag * contact_normal
         contact_forces[env_index].append(list(force_vec))
         contact_points[env_index].append(list(contact[5]))
@@ -308,7 +309,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
         contact_forces_.append(contact_forces[env_idx])
         contact_normals_.append(contact_normals[env_idx])
 
-    return contact_points_, contact_forces_, contact_normals_
+    return contact_points_, contact_forces_, contact_normals_, contacts
 
 
 def get_init_particle_state(gym, sim):
@@ -446,8 +447,9 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
     nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
 
     # Get contact information for all envs.
-
-    contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
+    contact_points, contact_forces, contact_normals, soft_contacts = get_contact_info(
+        gym, sim, gym.get_env_rigid_body_count(envs[0])
+    )
     results = []
     for env_idx, (env, wrist) in enumerate(zip(envs, wrists)):
         gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
@@ -480,6 +482,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,
             "env_origin": np.array([env_origin.x, env_origin.y, env_origin.z]),
+            "all_contact": soft_contacts,
         }
 
         if render_cameras:
@@ -528,10 +531,10 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
-    table_offset = 0.05
-    z_offset =  table_offset
+    table_offset = 0.0001
+    z_offset = table_offset
     lowering_speed = -0.2  # m/s
-    indent_distance = 0.04
+    indent_distance = 0.01
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
     num_configs = len(configs)
@@ -553,7 +556,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - indent_distance
+                round_goal_z_heights[idx] = start_z - table_offset - indent_distance
 
         # Lower until each environment reaches the desired height.
         t = 0
@@ -606,20 +609,20 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     return results
 
 
-def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state, out_folder = None, cfg_s = None):
-    '''
+def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
+                    out_folder=None, cfg_s=None):
+    """
         works on n = 1, e = 1
         1. detect contact
         2. press fixed amount after the contact
-    '''
-
+    """
 
     # Wrap particle
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
     table_offset = 0.05
-    z_offset =  table_offset
+    z_offset = table_offset
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
@@ -642,7 +645,7 @@ def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - table_offset -0.02 # Any large value would do.
+                round_goal_z_heights[idx] = start_z - table_offset - 0.02  # Any large value would do.
 
         # Lower until each environment reaches the desired height.
         t = 0
@@ -675,15 +678,13 @@ def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs
                 curr_pos[2] = max(des_z, goal_z)
                 gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
-
-                ## detect contact
+                # detect contact  TODO: make this compatible with multiple environments.
                 contacts = gym.get_soft_contacts(sim)
                 if len(contacts) > 0 and not contact_flag:
                     contact_flag = True
 
-                    ## Set new desired pose.
+                    # Set new desired pose.
                     round_goal_z_heights[idx] = curr_z - 0.01
-
 
             if complete:
                 break

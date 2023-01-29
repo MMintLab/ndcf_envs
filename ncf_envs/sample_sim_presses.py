@@ -11,6 +11,7 @@ def sample_sim_presses():
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     parser.add_argument("--num_envs", "-e", type=int, default=4,
                         help="Number of environments to simultaneously simulate.")
+    parser.add_argument("--cfg_s", type=str, default=4, help="path to scene config yaml file")
     args = parser.parse_args()
     use_viewer = args.viewer
     num_envs = args.num_envs
@@ -25,8 +26,9 @@ def sample_sim_presses():
         mmint_utils.make_dir(out)
 
     # Setup environment.
+    cfg_s = mmint_utils.load_cfg(args.cfg_s)
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer)
+        create_simulator(num_envs, use_viewer, cfg_s)
 
     # Run simulation with sampled configurations.
     results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,

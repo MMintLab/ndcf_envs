@@ -21,7 +21,7 @@ num_envs = args.num_envs
 num = args.num
 
 
-def sample_sim_presses(i, type = 'discrete'):
+def sample_sim_presses(i, type='discrete'):
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
 
     # Sample random configs to run in sim.
@@ -35,7 +35,7 @@ def sample_sim_presses(i, type = 'discrete'):
 
     # Setup environment.
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer, cfg_s, urdfs = ['urdf/wrist', f'urdf/terrain_{type}_{i}'])
+        create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist', f'urdf/terrain_{type}_{i}'])
 
     print("setup done")
 
@@ -47,7 +47,7 @@ def sample_sim_presses(i, type = 'discrete'):
 
     # Run simulation with sampled configurations.
     run_sim_loop_v2(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                           configs, None, init_particle_state, out_folder)
+                    configs, None, init_particle_state, out)
 
 
 if __name__ == '__main__':
@@ -57,7 +57,6 @@ if __name__ == '__main__':
     while i < N:
         sample_sim_presses(i, type)
         i += 1
-
 
     N = 10
     i = 0
