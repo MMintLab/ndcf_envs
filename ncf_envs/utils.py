@@ -5,6 +5,8 @@ import open3d as o3d
 from scipy.spatial import KDTree
 import trimesh
 import trimesh.sample
+
+
 # from vedo import Plotter, Points
 
 
@@ -174,6 +176,32 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
     return query_points_np, signed_distance_np
 
 
+def find_in_contact_triangles_indices(tri_mesh: o3d.geometry.TriangleMesh, particle_indices: np.ndarray,
+                                      particles: np.ndarray):
+    vertices = tri_mesh.vertices
+    triangles = tri_mesh.triangles
+    contact_vertices = np.zeros(len(vertices), dtype=bool)
+
+    # Pull out contact point triangle vertices from indices.
+    contact_points_indices = np.array([list(p) for p in particle_indices]).flatten()
+    contact_points = particles[contact_points_indices]
+
+    # Determine the vertices in contact.
+    kd_tree = KDTree(vertices)
+    d, contact_points_vert_idcs = kd_tree.query(contact_points)
+    contact_vertices[contact_points_vert_idcs] = True
+
+    # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
+    contact_triangles = np.array(
+        [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
+
+    # Find total area of contact patch.
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    contact_area = contact_triangles.astype(float) @ mesh.area_faces
+
+    return contact_vertices, contact_triangles, contact_area
+
+
 def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
     """
     Given the triangle mesh of the tool and the contact points (which are all vertices of the tool mesh),
@@ -187,17 +215,6 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     kd_tree = KDTree(vertices)
     d, contact_points_vert_idcs = kd_tree.query(contact_points)
     contact_vertices[contact_points_vert_idcs] = True
-
-    contact_kd_tree = KDTree(contact_points)
-    d_contact, vert_contact_points_idcs = contact_kd_tree.query(vertices)
-
-    plt = Plotter()
-    # plt.at(0).show(Points(vertices, c="blue"), Points(contact_points[vert_contact_points_idcs], c="red"))
-    plt.at(0).show(Points(contact_points, c="red"), Points(np.asarray(vertices)[contact_points_vert_idcs], c="blue"))
-    plt.interactive().close()
-
-    # plt.hist(d)
-    # plt.show()
 
     # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
     contact_triangles = np.array(

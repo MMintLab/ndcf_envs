@@ -118,7 +118,6 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     tri_vert, tri_triangles = utils.tetrahedral_to_surface_triangles(def_vert, tet_tetra)
     tri_mesh = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(tri_vert),
                                          o3d.utility.Vector3iVector(tri_triangles))
-    trimesh_mesh = trimesh.Trimesh(vertices=tri_vert, faces=tri_triangles)
 
     # Load terrain file.
     terrain_mesh: trimesh.Trimesh = trimesh.load(terrain_file)
@@ -128,46 +127,40 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
     contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
 
-    # (closest_points, distances, triangle_id) = terrain_mesh.nearest.on_surface(contact_points)
-    # (closest_points_, distances_, triangle_id_) = trimesh_mesh.nearest.on_surface(contact_points)
-
-    # if vis:
-    #     plt = Plotter(shape=(1, 2))
-    #     plt.at(0).show(Points(def_vert), Points(contact_points, c="red"), vedo_utils.draw_origin())
-    #     plt.at(1).show(Points(terrain_mesh.vertices), Points(contact_points, c="red"), vedo_utils.draw_origin())
-    #     plt.interactive().close()
-
+    # Load all contact information.
     all_contacts = data_dict["all_contact"]
-    for contact in all_contacts:
-        contact_point = contact["bodyOffset"]
-        normal = contact["normal"]
-        normal = utils.transform_vectors(np.array([list(normal)]), wrist_pose_T_w)[0]
-        contact_point = utils.transform_pointcloud(np.array([list(contact_point)]), wrist_pose_T_w)[0]
-        particle_indices = np.array(list(contact["particleIndices"]))
-        particle_barys = np.array(list(contact["particleBarys"]))
-        contact_point_surface = (def_vert[particle_indices[0]] * particle_barys[0]) + (
-                def_vert[particle_indices[1]] * particle_barys[1]) + (
-                                        def_vert[particle_indices[2]] * particle_barys[2])
 
-        point_diff = contact_point - contact_point_surface
-        point_diff /= np.linalg.norm(point_diff)
+    if vis and False:
+        for contact in all_contacts:
+            contact_point = contact["bodyOffset"]
+            normal = contact["normal"]
+            normal = utils.transform_vectors(np.array([list(normal)]), wrist_pose_T_w)[0]
+            contact_point = utils.transform_pointcloud(np.array([list(contact_point)]), wrist_pose_T_w)[0]
+            particle_indices = np.array(list(contact["particleIndices"]))
+            particle_barys = np.array(list(contact["particleBarys"]))
+            contact_point_surface = (def_vert[particle_indices[0]] * particle_barys[0]) + (
+                    def_vert[particle_indices[1]] * particle_barys[1]) + (
+                                            def_vert[particle_indices[2]] * particle_barys[2])
 
-        plt = Plotter(shape=(1, 2))
-        plt.at(0).show(  # Points(def_vert, c="black"),
-            Mesh([tri_vert, tri_triangles]),
-            Point(contact_point, c="red"),
-            Point(contact_point_surface, c="purple"),
-            Line(def_vert[particle_indices], c="blue", closed=True),
-            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
-            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
-        )
-        plt.at(1).show(  # Points(terrain_mesh.vertices, c="black"),
-            Point(contact_point, c="red"),
-            Mesh([terrain_mesh.vertices, terrain_mesh.faces]),
-            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
-            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
-        )
-        plt.interactive().close()
+            point_diff = contact_point - contact_point_surface
+            point_diff /= np.linalg.norm(point_diff)
+
+            plt = Plotter(shape=(1, 2))
+            plt.at(0).show(  # Points(def_vert, c="black"),
+                Mesh([tri_vert, tri_triangles]),
+                Point(contact_point, c="red"),
+                Point(contact_point_surface, c="purple"),
+                Line(def_vert[particle_indices], c="blue", closed=True),
+                # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+                # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
+            )
+            plt.at(1).show(  # Points(terrain_mesh.vertices, c="black"),
+                Point(contact_point, c="red"),
+                Mesh([terrain_mesh.vertices, terrain_mesh.faces]),
+                # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+                # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
+            )
+            plt.interactive().close()
 
     # Load contact forces.
     contact_forces_w = np.array(data_dict["contact_forces"])
@@ -181,7 +174,10 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
+    # contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
+    contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles_indices(
+        tri_mesh, all_contacts["particleIndices"], def_vert
+    )
     surface_points, surface_normals, surface_contact_labels = \
         utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
 
@@ -259,11 +255,10 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         vis_occupancy_data(points_iou, occ_tgt)
 
     # Build dataset.
-    dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
-    dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
-    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool),
-                                         surface_contact_labels])
-    dataset_normals = np.concatenate([np.zeros([len(query_points), 3]), contact_normals, surface_normals])
+    dataset_query_points = np.concatenate([query_points, surface_points])
+    dataset_sdf = np.concatenate([sdf, np.zeros(len(surface_points))])
+    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), surface_contact_labels])
+    dataset_normals = np.concatenate([np.zeros([len(query_points), 3]), surface_normals])
 
     assert len(dataset_query_points) == len(dataset_sdf) and len(dataset_query_points) == len(
         dataset_in_contact) and len(dataset_query_points) == len(dataset_normals)
@@ -275,7 +270,6 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
             "sdf": dataset_sdf,
             "in_contact": dataset_in_contact,
             "normals": dataset_normals,
-            "wrist_wrench": data_dict["wrist_wrench"],
             "pressure": pressure,
         },
         "test": {
@@ -287,6 +281,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         "input": {
             "pointclouds": partial_pc_data,
             "combined_pointcloud": combined_pointcloud,
+            "wrist_wrench": data_dict["wrist_wrench"],
         },
     }
     if out_dir is not None:
