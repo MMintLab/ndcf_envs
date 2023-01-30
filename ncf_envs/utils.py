@@ -161,7 +161,7 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
 
     # Get SDF query points by sampling surface points and adding small amount of gaussian noise.
     if n_off_surface > 0:
-        query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface)
+        query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface, seed=10)
         query_points_surface = np.asarray(query_points_surface.points)
         query_points_surface += np.random.normal(0.0, noise, size=query_points_surface.shape)
     else:
@@ -248,11 +248,6 @@ def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, n: int = 1000):
     # Find normals from triangles of sampled points.
     surface_normals = mesh.face_normals[triangle_idcs]
 
-    # Find normals using barycentric interpolation for smooth result.
-    # bary = trimesh.triangles.points_to_barycentric(triangles=mesh.triangles[triangle_idcs], points=surface_points)
-    # surface_normals = trimesh.unitize(
-    #     (mesh.vertex_normals[mesh.faces[triangle_idcs]] * trimesh.unitize(bary).reshape((-1, 3, 1))).sum(axis=1))
-
     return surface_points, surface_normals, triangle_idcs
 
 
@@ -263,4 +258,7 @@ def sample_surface_points_with_contact(tri_mesh: o3d.geometry.TriangleMesh, cont
     # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
     contact_labels = np.array([contact_triangles[t_idx] for t_idx in triangle_idcs])
 
-    return surface_points, surface_normals, contact_labels
+    # Pull out the contact path separately.
+    contact_patch = surface_points[contact_labels]
+
+    return np.array(surface_points), np.array(surface_normals), contact_labels, np.array(contact_patch)
