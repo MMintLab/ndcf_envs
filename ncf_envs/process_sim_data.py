@@ -48,15 +48,16 @@ def vis_images(rgb, depth, segmentation):
 
 
 def vis_partial_pc(gt_mesh, partial_pc_data, combined_pc):
-    vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
+    # vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
+    vedo_plt = Plotter(shape=(1, 1))
     vedo_mesh = Mesh([gt_mesh.vertices, gt_mesh.triangles])
     poses_vis = []
-    for idx in range(len(partial_pc_data)):
-        pc_data = partial_pc_data[idx]
-        pc_vedo = Points(pc_data["pointcloud"])
-        pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
-        poses_vis.append(pose_vis)
-        vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
+    # for idx in range(len(partial_pc_data)):
+    #     pc_data = partial_pc_data[idx]
+    #     pc_vedo = Points(pc_data["pointcloud"])
+    #     pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
+    #     poses_vis.append(pose_vis)
+    #     vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
     vedo_plt.at(0).show(vedo_utils.draw_origin(), vedo_mesh, Points(combined_pc), *poses_vis)
     vedo_plt.interactive().close()
 
@@ -185,7 +186,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     pressure = wrist_f_norm / contact_area
 
     # Some visualization for contact verts/tris.
-    if vis:
+    if vis and False:
         contact_points_vedo = Points(contact_points, c="r")
         tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
         tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
@@ -252,7 +253,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     # Generate ground truth occupancy values.
     points_iou, sdf_iou = utils.get_sdf_values(tri_mesh, 100000, n_off_surface=0, bound_extend=0.01)
     occ_tgt = sdf_iou <= 0.0
-    if vis:
+    if vis and False:
         vis_occupancy_data(points_iou, occ_tgt)
 
     # Build dataset.
