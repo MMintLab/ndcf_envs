@@ -129,7 +129,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
 
     # Load all contact information.
-    all_contacts = data_dict["all_contact"]
+    all_contacts = data_dict.get("all_contact", None)
 
     if vis and False:
         for contact in all_contacts:
@@ -170,10 +170,12 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    # contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
-    contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles_indices(
-        tri_mesh, all_contacts["particleIndices"], def_vert
-    )
+    if all_contacts is None:
+        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
+    else:
+        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles_indices(
+            tri_mesh, all_contacts["particleIndices"], def_vert
+        )
     surface_points, surface_normals, surface_contact_labels, contact_patch = \
         utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
 
