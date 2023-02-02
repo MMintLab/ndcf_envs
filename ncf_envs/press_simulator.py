@@ -2,6 +2,7 @@ import copy
 import os
 from collections import defaultdict
 
+import mmint_utils
 from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
@@ -41,6 +42,35 @@ def load_real_world_examples(run_dir):
         # Get wrench observed for real data.
         real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
         real_wrenches.append(real_wrench)
+
+    return real_configs, press_zs, real_wrenches
+
+
+def load_real_world_horizontal_examples(run_dir):
+    # Load real world run data.
+    example_names = [f.replace(".pkl.gzip", "") for f in os.listdir(run_dir) if ".pkl.gzip" in f]
+    example_names.sort(key=lambda k: int(k.split(".")[0].split("_")[-1]))
+
+    real_configs = []
+    press_zs = []
+    real_wrenches = []
+    for example_name in example_names:
+        real_dict = mmint_utils.load_gzip_pickle(os.path.join(run_dir, "%s.pkl.gzip" % example_name))
+
+        # Get configuration from the real world data.
+        real_config = real_dict["proprioception"]["tool_orn_config"]
+        real_configs.append(real_config)
+
+        # Find final z height of press.
+        mount_pose = real_dict["proprioception"]["mount_pose"][0]
+        acrylic_x = 0.73138
+        press_z = acrylic_x - mount_pose[0][0]
+        press_zs.append(press_z)
+
+        # Get wrench observed for real data.
+        wrenches = np.array([w[0] for w in real_dict["tactile"]["ati_wrench"][-20:]])
+        wrench = np.mean(wrenches, axis=0)
+        real_wrenches.append(wrench)
 
     return real_configs, press_zs, real_wrenches
 
@@ -373,10 +403,10 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
 
     for env_idx, (env, wrist, orientation) in enumerate(zip(envs, wrists, orientations)):
         # Determine position for tool.
-        base_R_w = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
-        des_R_base = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
-        des_R_w = des_R_base @ base_R_w
-        ax, ay, az = tf3d.euler.mat2euler(des_R_w, axes="rxyz")
+        w_R_base = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
+        base_R_des = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
+        w_R_des = w_R_base @ base_R_des
+        ax, ay, az = tf3d.euler.mat2euler(w_R_des, axes="rxyz")
         start_orientation = [0, 0, 0, ax, ay, az]
         z_offset = offset - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
         z_offsets.append(z_offset)

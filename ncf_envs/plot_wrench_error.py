@@ -1,10 +1,39 @@
 import argparse
+import os
 
 import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
 
-from press_simulator import load_real_world_examples
+import real_utils
+
+
+def load_real_world_examples(run_dir):
+    # Load real world run data.
+    example_names = [f.replace(".pkl.gzip", "") for f in os.listdir(run_dir) if ".pkl.gzip" in f]
+    example_names.sort(key=lambda k: int(k.split(".")[0].split("_")[-1]))
+
+    real_configs = []
+    press_zs = []
+    real_wrenches = []
+    for example_name in example_names:
+        real_dict = real_utils.load_observation_from_file(run_dir, example_name)
+
+        # Get configuration from the real world data.
+        real_config = real_dict["proprioception"]["tool_orn_config"]
+        real_configs.append(real_config)
+
+        # Find final z height of press.
+        ee_pose = real_dict["proprioception"]["ee_pose"][0]
+        table_height = 0.21  # TODO: Parameterize.
+        press_z = ee_pose[0][2] - table_height
+        press_zs.append(press_z)
+
+        # Get wrench observed for real data.
+        real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
+        real_wrenches.append(real_wrench)
+
+    return real_configs, press_zs, real_wrenches
 
 
 def real_vs_sim():
@@ -27,6 +56,7 @@ def real_vs_sim():
 
     for young in youngs:
         sim_wrenches = []
+
         for res in sim_results[young]:
             sim_wrenches.append(res["wrist_wrench"])
         sim_wrenches = np.array(sim_wrenches)

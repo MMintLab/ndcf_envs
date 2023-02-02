@@ -17,7 +17,7 @@ def recreate_real_presses():
     num_envs = args.num_envs
 
     # Get real press info.
-    real_configs, press_zs, _ = load_real_world_examples(args.run_dir)
+    real_configs, press_zs, _ = load_real_world_horizontal_examples(args.run_dir)
 
     # Setup out directory.
     out = args.out
@@ -30,11 +30,16 @@ def recreate_real_presses():
 
     # Run simulation with the configuration used in the real world.
     start_time = time.time()
-    run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                 real_configs, press_zs, init_particle_state)
+    results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
+                           real_configs, press_zs, init_particle_state)
     end_time = time.time()
     run_time = end_time - start_time
     print("Run time: %f" % run_time)
+
+    # Save results to file.
+    if out is not None:
+        for config_idx, result in enumerate(results):
+            mmint_utils.save_gzip_pickle(result, os.path.join(out, "config_%d.pkl.gzip" % config_idx))
 
     # Cleanup.
     close_sim(gym, sim, viewer, use_viewer)
