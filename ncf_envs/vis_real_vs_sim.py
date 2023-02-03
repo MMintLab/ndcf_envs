@@ -11,7 +11,7 @@ import vedo_utils
 
 
 def vis_real_vs_sim(real_dir: str, real_example: str, sim_fn: str):
-    sim_dict = mmint_utils.load_gzip_pickle(sim_fn)
+    sim_dict = mmint_utils.load_gzip_pickle(sim_fn)[1000.0][int(real_example.split("_")[-1].replace(".pkl.gzip", ""))]
     real_dict = real_utils.load_observation_from_file(real_dir, real_example)
 
     # Load simulated data.

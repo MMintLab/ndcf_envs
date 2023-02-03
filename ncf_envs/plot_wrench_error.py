@@ -4,7 +4,7 @@ import os
 import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
-
+import utils
 import real_utils
 
 
@@ -16,6 +16,7 @@ def load_real_world_examples(run_dir):
     real_configs = []
     press_zs = []
     real_wrenches = []
+    real_ee_poses = []
     for example_name in example_names:
         real_dict = real_utils.load_observation_from_file(run_dir, example_name)
 
@@ -28,12 +29,14 @@ def load_real_world_examples(run_dir):
         table_height = 0.21  # TODO: Parameterize.
         press_z = ee_pose[0][2] - table_height
         press_zs.append(press_z)
+        real_ee_poses.append(
+            [ee_pose[0][0], ee_pose[0][1], ee_pose[0][2], ee_pose[1][0], ee_pose[1][1], ee_pose[1][2], ee_pose[1][3]])
 
         # Get wrench observed for real data.
         real_wrench = np.array(real_dict["tactile"]["ati_wrench"][-1][0])
         real_wrenches.append(real_wrench)
 
-    return real_configs, press_zs, real_wrenches
+    return real_configs, press_zs, real_wrenches, real_ee_poses
 
 
 def real_vs_sim():
@@ -43,7 +46,7 @@ def real_vs_sim():
     args = parser.parse_args()
 
     # Get real press info.
-    _, _, real_wrenches = load_real_world_examples(args.run_dir)
+    _, _, real_wrenches, real_ee_poses = load_real_world_examples(args.run_dir)
     real_wrenches = np.array(real_wrenches)
 
     # Load simulated data.
@@ -56,7 +59,6 @@ def real_vs_sim():
 
     for young in youngs:
         sim_wrenches = []
-
         for res in sim_results[young]:
             sim_wrenches.append(res["wrist_wrench"])
         sim_wrenches = np.array(sim_wrenches)
