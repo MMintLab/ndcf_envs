@@ -31,6 +31,7 @@ def sample_sim_presses():
         create_simulator(num_envs, use_viewer, cfg_s)
 
     # Run simulation with sampled configurations.
+    input("ready")
     results = run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                            configs, None, init_particle_state)
 

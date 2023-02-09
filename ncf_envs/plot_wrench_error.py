@@ -3,6 +3,7 @@ import argparse
 import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
+plt.rcParams.update({"font.size": 16, "font.family": "aakar"})
 
 from press_simulator import load_real_world_examples
 
@@ -41,20 +42,21 @@ def real_vs_sim():
 
     sim_wrenches_best = sim_wrenches_all[idx]
 
-    fig, axs = plt.subplots(2, 3)
-    fig.suptitle("Real vs. Sim Wrench")
-    for w_idx, label in zip(range(6), ["Fx", "Fy", "Fz", "Tx", "Ty", "Tz"]):
-        axs[w_idx // 3, w_idx % 3].set_title(label)
-        axs[w_idx // 3, w_idx % 3].plot(sim_wrenches_best[:, w_idx], c="r", label="Sim")
-        axs[w_idx // 3, w_idx % 3].plot(real_wrenches[:, w_idx], c="b", label="Real")
-    axs[1, 2].legend()
-    plt.show()
+    # fig, axs = plt.subplots(2, 3)
+    # fig.suptitle("Real vs. Sim Wrench")
+    # for w_idx, label in zip(range(6), ["Fx", "Fy", "Fz", "Tx", "Ty", "Tz"]):
+    #     axs[w_idx // 3, w_idx % 3].set_title(label)
+    #     axs[w_idx // 3, w_idx % 3].plot(sim_wrenches_best[:, w_idx], c="r", label="Sim")
+    #     axs[w_idx // 3, w_idx % 3].plot(real_wrenches[:, w_idx], c="b", label="Real")
+    # axs[1, 2].legend()
+    # plt.show()
 
-    plt.plot(youngs, errors_mean)
+    plt.plot(youngs, errors_mean, label="Avg. Wrench Error")
     for y, er_all in zip(youngs, errors_all):
         plt.scatter([y] * len(er_all), er_all)
     plt.xlabel("Young's Modulus")
     plt.ylabel("L2 Wrench Error")
+    plt.legend()
     plt.show()
 
 

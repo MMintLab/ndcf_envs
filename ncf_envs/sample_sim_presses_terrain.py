@@ -39,28 +39,29 @@ def sample_sim_presses(i, type='discrete'):
 
     print("setup done")
 
-    out_folder = f'output/{type}/terrain_{i}'
+    out_folder = f'{out}/{type}/terrain_{i}'
     try:
         os.mkdir(out_folder)
     except:
         print("folder already exists")
 
     # Run simulation with sampled configurations.
+    input("ready")
     run_sim_loop_v2(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                     configs, None, init_particle_state, out)
 
 
 if __name__ == '__main__':
-    N = 10
-    i = 0
-    type = 'wave'
-    while i < N:
-        sample_sim_presses(i, type)
-        i += 1
+    # N = 2
+    # i = 0
+    # type = 'wave'
+    # while i < N:
+    # sample_sim_presses(1, type)
+    # i += 1
 
-    N = 10
+    N = 2
     i = 0
     type = 'discrete'
-    while i < N:
-        sample_sim_presses(i, type)
-        i += 1
+    # while i < N:
+    sample_sim_presses(1, type)
+    # i += 1

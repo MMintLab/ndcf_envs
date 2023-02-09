@@ -247,8 +247,8 @@ def create_viewer(gym, sim):
     camera_props.width = 1920
     camera_props.height = 1080
     viewer = gym.create_viewer(sim, camera_props)
-    camera_pos = gymapi.Vec3(1.5, -2.0, 2.0)
-    camera_target = gymapi.Vec3(0.0, 0.0, 0.0)
+    camera_pos = gymapi.Vec3(3.0, -3.0, 2.0)
+    camera_target = gymapi.Vec3(0.0, 0.0, 0.05)
     gym.viewer_camera_look_at(viewer, None, camera_pos, camera_target)
 
     axes_geom = gymutil.AxesGeometry(0.1)
