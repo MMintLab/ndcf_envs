@@ -16,7 +16,7 @@ if __name__ == '__main__':
     out_dir_idx = 0
 
     for gen_dir in gen_dirs:
-        cfg_files = os.listdir(gen_dir)
+        cfg_files = [f for f in os.listdir(gen_dir) if "config" in f]
 
         for cfg_file in cfg_files:
             os.symlink(os.path.abspath(os.path.join(gen_dir, cfg_file)),

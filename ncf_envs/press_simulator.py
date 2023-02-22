@@ -10,7 +10,9 @@ import numpy as np
 import transforms3d as tf3d
 import torch
 from tqdm import trange
+import open3d as o3d
 
+import mmint_utils
 import ncf_envs.utils as utils
 import ncf_envs.real_utils as real_utils
 
@@ -75,7 +77,8 @@ def load_real_world_horizontal_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def create_simulator(num_envs: int, use_viewer: bool = False):
+def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None,
+                     urdfs: list = ['urdf/wrist', 'urdf/table']):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
@@ -85,7 +88,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     # Load table/wrist asset.
     urdf_dir = "assets"
     asset_options = set_asset_options()
-    asset_handles = load_assets(gym, sim, urdf_dir, ['urdf/wrist', 'urdf/table'], asset_options, fix=True,
+    asset_handles = load_assets(gym, sim, urdf_dir, urdfs, asset_options, fix=True,
                                 gravity=False)
     wrist_asset_handle = asset_handles[0]
     table_asset_handle = asset_handles[1]
@@ -93,7 +96,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False):
     # Create scene.
     scene_props = set_scene_props(num_envs)
     env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
-        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle)
+        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle, cfg_s)
 
     # Setup wrist control properties.
     set_wrist_ctrl_props(gym, env_handles, wrist_actor_handles, [1e9, 50], [1e9, 50])
@@ -125,17 +128,19 @@ def set_scene_props(num_envs, env_dim=0.1):
     return scene_props
 
 
-def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
+def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle, cfg_s):
     """
     Create scene.
     """
     # Add plane.
     plane_params = gymapi.PlaneParams()
-    plane_params.normal = gymapi.Vec3(0.0, 0.0, 1.0)
-    plane_params.segmentation_id = 1
-    plane_params.static_friction = 1
-    plane_params.dynamic_friction = 1
-    plane_params.distance = 0.01
+    plane_params.normal = gymapi.Vec3(cfg_s["plane"]["normal"][0],
+                                      cfg_s["plane"]["normal"][1],
+                                      cfg_s["plane"]["normal"][2])
+    plane_params.segmentation_id = cfg_s["plane"]["segmentation_id"]
+    plane_params.static_friction = cfg_s["plane"]["static_friction"]
+    plane_params.dynamic_friction = cfg_s["plane"]["dynamic_friction"]
+    plane_params.distance = cfg_s["plane"]["distance"]
     gym.add_ground(sim, plane_params)
 
     env_handles = []
@@ -150,14 +155,28 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle):
 
         # Create tabletop.
         pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(cfg_s["table"]["pose"]["x"],
+                             cfg_s["table"]["pose"]["y"],
+                             cfg_s["table"]["pose"]["z"])
+        pose.r = gymapi.Quat(cfg_s["table"]["pose"]["qx"],
+                             cfg_s["table"]["pose"]["qy"],
+                             cfg_s["table"]["pose"]["qz"],
+                             cfg_s["table"]["pose"]["qw"])
         table_actor_handle = gym.create_actor(env_handle, table_asset_handle, pose, "table", group=i, filter=0,
-                                              segmentationId=1)
+                                              segmentationId=cfg_s["table"]["segmentation_id"])
         table_actor_handles.append(table_actor_handle)
 
         # Create wrist.
         pose = gymapi.Transform()
+        pose.p = gymapi.Vec3(cfg_s["wrist"]["pose"]["x"],
+                             cfg_s["wrist"]["pose"]["y"],
+                             cfg_s["wrist"]["pose"]["z"])
+        pose.r = gymapi.Quat(cfg_s["wrist"]["pose"]["qx"],
+                             cfg_s["wrist"]["pose"]["qy"],
+                             cfg_s["wrist"]["pose"]["qz"],
+                             cfg_s["wrist"]["pose"]["qw"])
         wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", group=i, filter=0,
-                                              segmentationId=1)
+                                              segmentationId=cfg_s["wrist"]["segmentation_id"])
         wrist_actor_handles.append(wrist_actor_handle)
 
         # Create cameras.
@@ -199,7 +218,7 @@ def create_sim(gym):
     sim_params.stress_visualization_max = 1.0e5
 
     sim_params.flex.solver_type = 5  # PCR (GPU, global)
-    sim_params.flex.num_outer_iterations = 10
+    sim_params.flex.num_outer_iterations = 20
     sim_params.flex.num_inner_iterations = 200
     sim_params.flex.relaxation = 0.75
     sim_params.flex.warm_start = 0.8
@@ -258,8 +277,8 @@ def create_viewer(gym, sim):
     camera_props.width = 1920
     camera_props.height = 1080
     viewer = gym.create_viewer(sim, camera_props)
-    camera_pos = gymapi.Vec3(1.5, -2.0, 2.0)
-    camera_target = gymapi.Vec3(0.0, 0.0, 0.0)
+    camera_pos = gymapi.Vec3(3.0, -3.0, 2.0)
+    camera_target = gymapi.Vec3(0.0, 0.0, 0.05)
     gym.viewer_camera_look_at(viewer, None, camera_pos, camera_target)
 
     axes_geom = gymutil.AxesGeometry(0.1)
@@ -302,12 +321,11 @@ def get_contact_info(gym, sim, rigid_body_per_env):
     contact_forces = defaultdict(list)
     contact_points = defaultdict(list)
     contact_normals = defaultdict(list)
-
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
         contact_force_mag = contact[7]
-        env_index = rigid_body_index // rigid_body_per_env
+        env_index = rigid_body_index // rigid_body_per_env  # TODO: This won't work for multiple envs.
         force_vec = contact_force_mag * contact_normal
         contact_forces[env_index].append(list(force_vec))
         contact_points[env_index].append(list(contact[5]))
@@ -321,7 +339,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
         contact_forces_.append(contact_forces[env_idx])
         contact_normals_.append(contact_normals[env_idx])
 
-    return contact_points_, contact_forces_, contact_normals_
+    return contact_points_, contact_forces_, contact_normals_, contacts
 
 
 def get_init_particle_state(gym, sim):
@@ -459,8 +477,9 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
     nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
 
     # Get contact information for all envs.
-    contact_points, contact_forces, contact_normals = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
-
+    contact_points, contact_forces, contact_normals, soft_contacts = get_contact_info(
+        gym, sim, gym.get_env_rigid_body_count(envs[0])
+    )
     results = []
     for env_idx, (env, wrist) in enumerate(zip(envs, wrists)):
         gym.draw_env_rigid_contacts(viewer, env, gymapi.Vec3(1.0, 0.5, 0.0), 0.05, True)
@@ -493,6 +512,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,
             "env_origin": np.array([env_origin.x, env_origin.y, env_origin.z]),
+            "all_contact": soft_contacts,
         }
 
         if render_cameras:
@@ -617,3 +637,99 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
         results.extend(results_)
     return results
+
+
+def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
+                    out_folder=None, cfg_s=None):
+    """
+        works on n = 1, e = 1
+        1. detect contact
+        2. press fixed amount after the contact
+    """
+
+    # Wrap particle
+    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
+    gym.refresh_particle_state_tensor(sim)
+
+    table_offset = 0.05
+    z_offset = table_offset
+    lowering_speed = -0.2  # m/s
+    dt = gym.get_sim_params(sim).dt
+    num_envs = len(envs)
+    num_configs = len(configs)
+    num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
+    z_height_provided = z_heights is not None
+
+    if not z_height_provided:
+        z_heights = [None] * num_configs
+
+    results = []
+    for range_idx in trange(num_rounds):
+        round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
+        round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
+
+        # Reset to new config.
+        tool_state_init_ = copy.deepcopy(init_particle_state)
+        tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
+        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
+
+        if not z_height_provided:
+            for idx, start_z in enumerate(start_zs):
+                round_goal_z_heights[idx] = start_z - table_offset - 0.02  # Any large value would do.
+
+        # Lower until each environment reaches the desired height.
+        t = 0
+        contact_flag = False
+        while True:
+            t += 1
+            # Step simulator.
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+
+            # Visualize motion and deformation
+            if use_viewer:
+                gym.step_graphics(sim)
+                gym.draw_viewer(viewer, sim, True)
+                gym.clear_lines(viewer)
+
+            # Set goal motions for each wrist.
+            complete = True
+            for env, wrist, start_z, goal_z in zip(envs, wrists, start_zs, round_goal_z_heights):
+                # Get current wrist pose.
+                curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
+                curr_z = curr_pos[2]
+
+                # If we've reached our lowering goal, exit.
+                if abs(curr_z - goal_z) > 0.001:
+                    complete = False
+
+                # Set new desired pose.
+                des_z = start_z + (lowering_speed * dt * t)
+                curr_pos[2] = max(des_z, goal_z)
+                gym.set_actor_dof_position_targets(env, wrist, curr_pos)
+
+                # detect contact  TODO: make this compatible with multiple environments.
+                contacts = gym.get_soft_contacts(sim)
+                if len(contacts) > 0 and not contact_flag:
+                    contact_flag = True
+
+                    # Set new desired pose.
+                    round_goal_z_heights[idx] = curr_z - 0.01
+
+            if complete:
+                break
+
+        # Let simulation settle a bit.
+        for _ in range(10):
+            # Step simulator.
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+            if use_viewer:
+                gym.step_graphics(sim)
+                gym.draw_viewer(viewer, sim, True)
+                gym.clear_lines(viewer)
+
+        # Get results.
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)[0]
+        if out_folder is not None:
+            mmint_utils.save_gzip_pickle(results_, os.path.join(out_folder, "config_%d.pkl.gzip" % range_idx))

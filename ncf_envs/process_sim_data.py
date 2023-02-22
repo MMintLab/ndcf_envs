@@ -4,8 +4,9 @@ import mmint_utils
 import argparse
 import numpy as np
 import open3d as o3d
+import trimesh
 from tqdm import trange
-from vedo import Plotter, Points, Arrows, Mesh
+from vedo import Plotter, Points, Arrows, Mesh, Point, Line, Arrow
 import utils
 import vedo_utils
 import matplotlib.pyplot as plt
@@ -47,15 +48,16 @@ def vis_images(rgb, depth, segmentation):
 
 
 def vis_partial_pc(gt_mesh, partial_pc_data, combined_pc):
-    vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
+    # vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
+    vedo_plt = Plotter(shape=(1, 1))
     vedo_mesh = Mesh([gt_mesh.vertices, gt_mesh.triangles])
     poses_vis = []
-    for idx in range(len(partial_pc_data)):
-        pc_data = partial_pc_data[idx]
-        pc_vedo = Points(pc_data["pointcloud"])
-        pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
-        poses_vis.append(pose_vis)
-        vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
+    # for idx in range(len(partial_pc_data)):
+    #     pc_data = partial_pc_data[idx]
+    #     pc_vedo = Points(pc_data["pointcloud"])
+    #     pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
+    #     poses_vis.append(pose_vis)
+    #     vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
     vedo_plt.at(0).show(vedo_utils.draw_origin(), vedo_mesh, Points(combined_pc), *poses_vis)
     vedo_plt.interactive().close()
 
@@ -90,7 +92,8 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
     return np.array(points)
 
 
-def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, vis=False):
+def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_name, out_dir: str = None,
+                             terrain_file: str = None, vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -103,7 +106,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     def_vert_prime = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
     def_vert = data_dict["nodal_coords_wrist"]
 
-    if vis:
+    if vis and False:
         plt = Plotter(shape=(1, 2))
         plt.at(0).show(Points(def_vert_prime), vedo_utils.draw_origin())
         plt.at(1).show(Points(def_vert), vedo_utils.draw_origin())
@@ -117,9 +120,44 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     tri_mesh = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(tri_vert),
                                          o3d.utility.Vector3iVector(tri_triangles))
 
+    # Load terrain file.
+    if terrain_file is not None:
+        terrain_mesh: trimesh.Trimesh = trimesh.load(terrain_file)
+        terrain_mesh.apply_transform(wrist_pose_T_w)
+
     # Load contact point cloud.
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
     contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
+
+    # Load all contact information.
+    all_contacts = data_dict.get("all_contact", None)
+
+    if vis and False:
+        for contact in all_contacts:
+            contact_point = contact["bodyOffset"]
+            normal = contact["normal"]
+            normal = utils.transform_vectors(np.array([list(normal)]), wrist_pose_T_w)[0]
+            contact_point = utils.transform_pointcloud(np.array([list(contact_point)]), wrist_pose_T_w)[0]
+            particle_indices = np.array(list(contact["particleIndices"]))
+            particle_barys = np.array(list(contact["particleBarys"]))
+            contact_point_surface = (def_vert[particle_indices[0]] * particle_barys[0]) + (
+                    def_vert[particle_indices[1]] * particle_barys[1]) + (
+                                            def_vert[particle_indices[2]] * particle_barys[2])
+
+            plt = Plotter(shape=(1, 2))
+            plt.at(0).show(  # Points(def_vert, c="black"),
+                Mesh([tri_vert, tri_triangles]),
+                Point(contact_point, c="red"),
+                Point(contact_point_surface, c="purple"),
+                Line(def_vert[particle_indices], c="blue", closed=True),
+                Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+            )
+            plt.at(1).show(  # Points(terrain_mesh.vertices, c="black"),
+                Point(contact_point, c="red"),
+                Mesh([terrain_mesh.vertices, terrain_mesh.faces]),
+                Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+            )
+            plt.interactive().close()
 
     # Load contact forces.
     contact_forces_w = np.array(data_dict["contact_forces"])
@@ -133,8 +171,13 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     query_points, sdf = utils.get_sdf_values(tri_mesh, n_random=20000, n_off_surface=20000)
 
     # Get samples on the surface of the object.
-    contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
-    surface_points, surface_normals, surface_contact_labels = \
+    if all_contacts is None:
+        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
+    else:
+        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles_indices(
+            tri_mesh, all_contacts["particleIndices"], def_vert
+        )
+    surface_points, surface_normals, surface_contact_labels, contact_patch = \
         utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
 
     # Calculate pressure (approx) for interaction.
@@ -143,7 +186,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     pressure = wrist_f_norm / contact_area
 
     # Some visualization for contact verts/tris.
-    if vis:
+    if vis and False:
         contact_points_vedo = Points(contact_points, c="r")
         tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
         tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
@@ -155,9 +198,12 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
         new_points_vedo = Points(surface_points, c="b")
         new_contact_points_vedo = Points(surface_points[surface_contact_labels], c="r")
 
+        contact_vertices_data = def_vert[np.array([list(c) for c in all_contacts["particleIndices"]]).flatten()]
+
         plt = Plotter(shape=(1, 3))
         plt.at(0).show(contact_points_vedo, tri_mesh_vedo_contact,
                        Arrows(contact_points, contact_points + 0.01 * contact_forces),
+                       Points(contact_vertices_data, c="purple"),
                        "Contact Points")
         plt.at(1).show(new_points_vedo, new_contact_points_vedo,
                        Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
@@ -207,15 +253,14 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     # Generate ground truth occupancy values.
     points_iou, sdf_iou = utils.get_sdf_values(tri_mesh, 100000, n_off_surface=0, bound_extend=0.01)
     occ_tgt = sdf_iou <= 0.0
-    if vis:
+    if vis and False:
         vis_occupancy_data(points_iou, occ_tgt)
 
     # Build dataset.
-    dataset_query_points = np.concatenate([query_points, contact_points, surface_points])
-    dataset_sdf = np.concatenate([sdf, np.zeros(len(contact_points)), np.zeros(len(surface_points))])
-    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), np.ones(len(contact_points), dtype=bool),
-                                         surface_contact_labels])
-    dataset_normals = np.concatenate([np.zeros([len(query_points), 3]), contact_normals, surface_normals])
+    dataset_query_points = np.concatenate([query_points, surface_points])
+    dataset_sdf = np.concatenate([sdf, np.zeros(len(surface_points))])
+    dataset_in_contact = np.concatenate([np.zeros(len(sdf), dtype=bool), surface_contact_labels])
+    dataset_normals = np.concatenate([np.zeros([len(query_points), 3]), surface_normals])
 
     assert len(dataset_query_points) == len(dataset_sdf) and len(dataset_query_points) == len(
         dataset_in_contact) and len(dataset_query_points) == len(dataset_normals)
@@ -227,23 +272,29 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
             "sdf": dataset_sdf,
             "in_contact": dataset_in_contact,
             "normals": dataset_normals,
-            "wrist_wrench": data_dict["wrist_wrench"],
             "pressure": pressure,
         },
         "test": {
             "surface_points": surface_points,
             "surface_in_contact": surface_contact_labels,
+            "contact_patch": contact_patch,
             "points_iou": points_iou,
             "occ_tgt": occ_tgt,
         },
         "input": {
             "pointclouds": partial_pc_data,
             "combined_pointcloud": combined_pointcloud,
+            "wrist_wrench": data_dict["wrist_wrench"],
         },
     }
-    if out_dir is not None:
-        mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
-        o3d.io.write_triangle_mesh(os.path.join(out_dir, example_name + "_mesh.obj"), tri_mesh)
+
+    if out_dir is None:
+        out_dir = data_dir
+    else:
+        mmint_utils.make_dir(out_dir)
+
+    mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
+    o3d.io.write_triangle_mesh(os.path.join(out_dir, example_name + "_mesh.obj"), tri_mesh)
 
     if vis:
         vis_example_data(dataset_dict)
@@ -253,17 +304,23 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process sim data.")
     parser.add_argument("data_dir", type=str, help="Data dir.")
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
+    parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
+    parser.add_argument("-t", "--terrain", type=str, default=None, help="Terrain file used in interaction (if any).")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
     parser.set_defaults(vis=False)
     args = parser.parse_args()
 
+    # Seed random state.
+    np.random.seed(0)
+
     # Load data fns.
-    data_dir = args.data_dir
-    data_fns = [f for f in os.listdir(data_dir) if "config_" in f]
+    data_dir_ = args.data_dir
+    data_fns = [f for f in os.listdir(data_dir_) if "config_" in f]
     data_fns.sort(key=lambda a: int(a.replace(".pkl.gzip", "").split("_")[-1]))
 
     for data_idx in trange(len(data_fns)):
-        data_fn = os.path.join(data_dir, data_fns[data_idx])
+        data_fn = os.path.join(data_dir_, data_fns[data_idx])
         example_name_ = "out_%d" % data_idx
 
-        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir, example_name_, vis=args.vis)
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir_, example_name_, out_dir=args.out,
+                                 terrain_file=args.terrain, vis=args.vis)

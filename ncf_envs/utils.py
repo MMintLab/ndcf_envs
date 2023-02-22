@@ -1,9 +1,13 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import transforms3d as tf3d
 import open3d as o3d
 from scipy.spatial import KDTree
 import trimesh
 import trimesh.sample
+
+
+# from vedo import Plotter, Points
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -157,7 +161,7 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
 
     # Get SDF query points by sampling surface points and adding small amount of gaussian noise.
     if n_off_surface > 0:
-        query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface)
+        query_points_surface = tri_mesh.sample_points_uniformly(number_of_points=n_off_surface, seed=10)
         query_points_surface = np.asarray(query_points_surface.points)
         query_points_surface += np.random.normal(0.0, noise, size=query_points_surface.shape)
     else:
@@ -172,6 +176,32 @@ def get_sdf_values(tri_mesh: o3d.geometry.TriangleMesh, n_random: int = 10000, n
     return query_points_np, signed_distance_np
 
 
+def find_in_contact_triangles_indices(tri_mesh: o3d.geometry.TriangleMesh, particle_indices: np.ndarray,
+                                      particles: np.ndarray):
+    vertices = tri_mesh.vertices
+    triangles = tri_mesh.triangles
+    contact_vertices = np.zeros(len(vertices), dtype=bool)
+
+    # Pull out contact point triangle vertices from indices.
+    contact_points_indices = np.array([list(p) for p in particle_indices]).flatten()
+    contact_points = particles[contact_points_indices]
+
+    # Determine the vertices in contact.
+    kd_tree = KDTree(vertices)
+    d, contact_points_vert_idcs = kd_tree.query(contact_points)
+    contact_vertices[contact_points_vert_idcs] = True
+
+    # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
+    contact_triangles = np.array(
+        [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
+
+    # Find total area of contact patch.
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    contact_area = contact_triangles.astype(float) @ mesh.area_faces
+
+    return contact_vertices, contact_triangles, contact_area
+
+
 def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
     """
     Given the triangle mesh of the tool and the contact points (which are all vertices of the tool mesh),
@@ -183,7 +213,7 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
 
     # Determine the vertices in contact.
     kd_tree = KDTree(vertices)
-    _, contact_points_vert_idcs = kd_tree.query(contact_points)
+    d, contact_points_vert_idcs = kd_tree.query(contact_points)
     contact_vertices[contact_points_vert_idcs] = True
 
     # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
@@ -218,11 +248,6 @@ def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, n: int = 1000):
     # Find normals from triangles of sampled points.
     surface_normals = mesh.face_normals[triangle_idcs]
 
-    # Find normals using barycentric interpolation for smooth result.
-    # bary = trimesh.triangles.points_to_barycentric(triangles=mesh.triangles[triangle_idcs], points=surface_points)
-    # surface_normals = trimesh.unitize(
-    #     (mesh.vertex_normals[mesh.faces[triangle_idcs]] * trimesh.unitize(bary).reshape((-1, 3, 1))).sum(axis=1))
-
     return surface_points, surface_normals, triangle_idcs
 
 
@@ -233,4 +258,7 @@ def sample_surface_points_with_contact(tri_mesh: o3d.geometry.TriangleMesh, cont
     # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
     contact_labels = np.array([contact_triangles[t_idx] for t_idx in triangle_idcs])
 
-    return surface_points, surface_normals, contact_labels
+    # Pull out the contact path separately.
+    contact_patch = surface_points[contact_labels]
+
+    return np.array(surface_points), np.array(surface_normals), contact_labels, np.array(contact_patch)
