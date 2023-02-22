@@ -556,91 +556,8 @@ def close_sim(gym, sim, viewer, use_viewer):
     print("Done!")
 
 
-def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state):
-    # Wrap particle
-    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
-    gym.refresh_particle_state_tensor(sim)
-
-    table_offset = 0.0001
-    z_offset = table_offset
-    lowering_speed = -0.2  # m/s
-    indent_distance = 0.01
-    dt = gym.get_sim_params(sim).dt
-    num_envs = len(envs)
-    num_configs = len(configs)
-    num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
-    z_height_provided = z_heights is not None
-
-    if not z_height_provided:
-        z_heights = [None] * num_configs
-
-    results = []
-    for range_idx in trange(num_rounds):
-        round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
-        round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
-
-        # Reset to new config.
-        tool_state_init_ = copy.deepcopy(init_particle_state)
-        tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
-
-        if not z_height_provided:
-            for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - table_offset - indent_distance
-
-        # Lower until each environment reaches the desired height.
-        t = 0
-        while True:
-            t += 1
-            # Step simulator.
-            gym.simulate(sim)
-            gym.fetch_results(sim, True)
-
-            # Visualize motion and deformation
-            if use_viewer:
-                gym.step_graphics(sim)
-                gym.draw_viewer(viewer, sim, True)
-                gym.clear_lines(viewer)
-
-            # Set goal motions for each wrist.
-            complete = True
-            for env, wrist, start_z, goal_z in zip(envs, wrists, start_zs, round_goal_z_heights):
-                # Get current wrist pose.
-                curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
-                curr_z = curr_pos[2]
-
-                # If we've reached our lowering goal, exit.
-                if abs(curr_z - goal_z) > 0.001:
-                    complete = False
-
-                # Set new desired pose.
-                des_z = start_z + (lowering_speed * dt * t)
-                curr_pos[2] = max(des_z, goal_z)
-                gym.set_actor_dof_position_targets(env, wrist, curr_pos)
-
-            if complete:
-                break
-
-        # Let simulation settle a bit.
-        for _ in range(10):
-            # Step simulator.
-            gym.simulate(sim)
-            gym.fetch_results(sim, True)
-            if use_viewer:
-                gym.step_graphics(sim)
-                gym.draw_viewer(viewer, sim, True)
-                gym.clear_lines(viewer)
-
-        # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)[
-                   :len(round_configs)]
-
-        results.extend(results_)
-    return results
-
-
-def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
-                    out_folder=None, cfg_s=None):
+def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
+                 out_folder=None, cfg_s=None):
     """
         works on n = 1, e = 1
         1. detect contact
@@ -663,7 +580,6 @@ def run_sim_loop_v2(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs
     if not z_height_provided:
         z_heights = [None] * num_configs
 
-    results = []
     for range_idx in trange(num_rounds):
         round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
         round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]

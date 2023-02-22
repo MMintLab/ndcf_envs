@@ -1,0 +1,30 @@
+<robot name="table">
+
+    <link name="world">
+    </link>
+
+    <joint name="world_to_block" type="fixed">
+        <parent link="world"/>
+        <child link="block"/>
+    </joint>
+
+    <link name="block">
+        <inertial>
+            <mass value="0.001"/>
+            <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0.0" ixz="0.0" iyz="0.0"/>
+        </inertial>
+        <visual>
+            <origin xyz="0.025 0.0 -0.005"/>
+            <geometry>
+                <box size="0.05 0.1 0.01"/>
+            </geometry>
+        </visual>
+        <collision>
+            <origin xyz="0.025 0.0 -0.005"/>
+            <geometry>
+                <box size="0.05 0.1 0.01"/>
+            </geometry>
+        </collision>
+    </link>
+
+</robot>

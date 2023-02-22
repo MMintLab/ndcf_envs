@@ -1,10 +1,5 @@
-import os.path
-from press_simulator import *
-import argparse
-import mmint_utils
-from isaacgym.terrain_utils import *
-from cfg.terrain import DiscreteTerrainConfig as DTC
-from cfg.terrain import WaveTerrainConfig as WTC
+from ncf_envs.terrain import DiscreteTerrainConfig as DTC
+from ncf_envs.terrain import WaveTerrainConfig as WTC
 from terrain_utils import *
 import trimesh
 
