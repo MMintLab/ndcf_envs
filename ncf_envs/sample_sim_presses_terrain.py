@@ -3,11 +3,10 @@ from press_simulator import *
 import argparse
 import mmint_utils
 from isaacgym.terrain_utils import *
-from cfg.terrain import DiscreteTerrainConfig as DTC
-from cfg.terrain import WaveTerrainConfig as WTC
 from terrain_utils import *
 
 parser = argparse.ArgumentParser()
+parser.add_argument("terrain_file", type=str, help="Terrain file to load.")
 parser.add_argument("--out", "-o", type=str, help="Directory to store results")
 parser.add_argument("--num", "-n", type=int, default=100, help="Number of presses to simulate.")
 parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
@@ -19,6 +18,7 @@ args = parser.parse_args()
 use_viewer = args.viewer
 num_envs = args.num_envs
 num = args.num
+terrain_file = args.terrain_file
 
 
 def sample_sim_presses(i, type='discrete'):
@@ -35,18 +35,18 @@ def sample_sim_presses(i, type='discrete'):
 
     # Setup environment.
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist', f'urdf/terrain_{type}_{i}'])
+        create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist', terrain_file])
 
     print("setup done")
 
-    out_folder = f'{out}/{type}/terrain_{i}'
-    try:
-        os.mkdir(out_folder)
-    except:
-        print("folder already exists")
+    # out_folder = f'{out}/{type}/terrain_{i}'
+    # try:
+    #     os.mkdir(out_folder)
+    # except:
+    #     print("folder already exists")
 
     # Run simulation with sampled configurations.
-    input("ready")
+    # input("ready")
     run_sim_loop_v2(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                     configs, None, init_particle_state, out)
 
