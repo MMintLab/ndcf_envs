@@ -4,7 +4,7 @@ from terrain_utils import *
 import trimesh
 
 
-def sample_sim_presses():
+def generate_terrain():
     N = 10
     for i in range(N):
         vertices, triangles, _ = generate_wave_terrain(WTC())
@@ -19,4 +19,4 @@ def sample_sim_presses():
 
 
 if __name__ == '__main__':
-    sample_sim_presses()
+    generate_terrain()
