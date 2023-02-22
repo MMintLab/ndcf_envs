@@ -2,7 +2,6 @@ import copy
 import os
 from collections import defaultdict
 
-import mmint_utils
 from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
@@ -10,11 +9,10 @@ import numpy as np
 import transforms3d as tf3d
 import torch
 from tqdm import trange
-import open3d as o3d
 
 import mmint_utils
-import ncf_envs.utils as utils
-import ncf_envs.real_utils as real_utils
+import ncf_envs.utils.utils as utils
+import ncf_envs.utils.real_utils as real_utils
 
 
 # Simulate pressing deformable tool into surface.

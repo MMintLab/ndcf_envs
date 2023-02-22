@@ -1,4 +1,3 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import transforms3d as tf3d
 import open3d as o3d

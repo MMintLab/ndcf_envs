@@ -4,7 +4,7 @@ import os
 import mmint_utils
 import numpy as np
 import matplotlib.pyplot as plt
-import real_utils
+from ncf_envs.utils import real_utils
 
 plt.rcParams.update({"font.size": 16, "font.family": "aakar"})
 

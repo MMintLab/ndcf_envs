@@ -7,8 +7,7 @@ import open3d as o3d
 import trimesh
 from tqdm import trange
 from vedo import Plotter, Points, Arrows, Mesh, Point, Line, Arrow
-import utils
-import vedo_utils
+from ncf_envs.utils import vedo_utils, utils
 import matplotlib.pyplot as plt
 
 

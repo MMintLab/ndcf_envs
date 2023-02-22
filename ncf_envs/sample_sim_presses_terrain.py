@@ -1,7 +1,7 @@
 import argparse
 from press_simulator import *
 import mmint_utils
-from terrain_utils import *
+from ncf_envs.terrain.random.terrain_utils import *
 
 
 def sample_sim_presses():
