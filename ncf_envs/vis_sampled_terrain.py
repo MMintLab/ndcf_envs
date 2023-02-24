@@ -7,6 +7,7 @@ import mmint_utils
 
 def vis_sampled_terrain():
     parser = argparse.ArgumentParser()
+    parser.add_argument("terrain_cfg", type=str, help="Terrain configuration file.")
     parser.add_argument("--num_envs", "-e", type=int, default=1,
                         help="Number of environments to simultaneously simulate.")
     parser.add_argument("--cfg_s", type=str, default="cfg/scene.yaml",
@@ -14,10 +15,11 @@ def vis_sampled_terrain():
     args = parser.parse_args()
     num_envs = args.num_envs
 
+    terrain_cfg = mmint_utils.load_cfg(args.terrain_cfg)
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
 
     # Generate terrain.
-    terrain_file = generate_primitive_terrain()
+    terrain_file, terrain_offset = generate_primitive_terrain(terrain_cfg)
     print(terrain_file)
 
     # Setup environment.
@@ -28,8 +30,7 @@ def vis_sampled_terrain():
     configs = np.zeros([1, 3])
     tool_state_init_ = copy.deepcopy(init_particle_state)
     tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-    reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_,
-                       configs, 0.1)
+    reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs, terrain_offset + 0.03)
 
     while True:
         # gym.simulate(sim)

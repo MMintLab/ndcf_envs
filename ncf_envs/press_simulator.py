@@ -415,6 +415,7 @@ def reset_wrist(gym, sim, env, wrist, joint_state):
 
 
 def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offset):
+    # TODO: Double check the frames on this.
     z_offsets = []
 
     for env_idx, (env, wrist, orientation) in enumerate(zip(envs, wrists, orientations)):
