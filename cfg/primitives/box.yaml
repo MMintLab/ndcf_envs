@@ -1,3 +1,2 @@
 type: box
-extents: [ 0.1, 0.1, 0.1 ]
-xy_translation_lims: [ 0.005, 0.045 ]
+height: 0.03

@@ -28,9 +28,10 @@ def vis_sampled_terrain():
 
     # Move to random init pose.
     configs = np.zeros([1, 3])
+    # configs = np.array([[0.01, 0.0, 0.0]])
     tool_state_init_ = copy.deepcopy(init_particle_state)
     tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-    reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs, terrain_offset + 0.03)
+    reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs, terrain_offset + 0.02)
 
     while True:
         # gym.simulate(sim)
