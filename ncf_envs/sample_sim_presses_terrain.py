@@ -1,7 +1,6 @@
 import argparse
 from press_simulator import *
 import mmint_utils
-from ncf_envs.terrain.random.terrain_utils import *
 
 
 def sample_sim_presses():
@@ -12,7 +11,7 @@ def sample_sim_presses():
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
     parser.add_argument("--num_envs", "-e", type=int, default=4,
                         help="Number of environments to simultaneously simulate.")
-    parser.add_argument("--cfg_s", type=str, default=4,
+    parser.add_argument("--cfg_s", type=str, default="cfg/scene.yaml",
                         help="path to scene config yaml file")
     args = parser.parse_args()
     use_viewer = args.viewer

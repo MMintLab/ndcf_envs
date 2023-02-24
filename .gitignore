@@ -4,3 +4,5 @@ out
 .idea
 *.egg-info
 output/
+assets/meshes/primitives/
+assets/urdf/primitives/
