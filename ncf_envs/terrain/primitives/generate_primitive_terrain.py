@@ -37,15 +37,16 @@ def generate_cylinder(cylinder_cfg: dict, tool_width: float):
 
 def generate_ridge(ridge_cfg: dict, tool_width: float):
     length = 2 * tool_width
-    ridge_width = 0.01
+    ridge_width = 0.005 + (np.random.random() * 0.005)
     num_points = 100
     height = 0.03
-    amplitude = 0.03
 
     x = np.arange(-tool_width, tool_width + 1e-6, length / num_points)
     if np.random.random() < 0.5:
+        amplitude = 0.0
         y = [0.0] * num_points
     else:
+        amplitude = 0.0 + (np.random.random() * 0.04)
         coords = (x + tool_width) / length
         y = np.sin(coords * np.pi) * amplitude
 
@@ -58,6 +59,8 @@ def generate_ridge(ridge_cfg: dict, tool_width: float):
     ridge_polygon = shapely.Polygon(polygon_points)
 
     ridge_mesh = trimesh.creation.extrude_polygon(ridge_polygon, height)
+
+    ridge_mesh.apply_translation([0.0, -amplitude, 0.0])
     return ridge_mesh, height
 
 
@@ -65,7 +68,7 @@ def generate_primitive_terrain(terrain_cfg: dict, vis=False):
     assets_dir = "assets"
     primitives_mesh_dir = "meshes/primitives/"
     primitives_urdf_dir = "urdf/primitives/"
-    tool_width = 0.046
+    tool_width = 0.046  # TODO: Parameterize based on tool.
 
     # Load base urdf.
     base_urdf_fn = os.path.join(assets_dir, "urdf/base.urdf")

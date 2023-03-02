@@ -415,7 +415,7 @@ def reset_wrist(gym, sim, env, wrist, joint_state):
 def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offset):
     z_offsets = []
     base_T_sponge = np.eye(4)
-    base_T_sponge[2, 3] = 0.036 + 0.046
+    base_T_sponge[2, 3] = 0.036 + 0.046  # TODO: Parameterize based on tool?
     sponge_T_base = np.eye(4)
     sponge_T_base[2, 3] = -(0.036 + 0.046)
 
