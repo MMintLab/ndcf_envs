@@ -385,9 +385,6 @@ def transform_points(points, transform, axes='rxyz'):
     If 6 terms, assumed euler angles. Uses axes arg to interpret.
     If 7 terms, assumed wxyz quaternion.
     """
-    if type(points) == torch.Tensor:
-        points = points.cpu().numpy()
-
     # Build transform matrix.
     tf_matrix = np.eye(4)
     tf_matrix[:3, 3] = transform[:3]
@@ -395,9 +392,10 @@ def transform_points(points, transform, axes='rxyz'):
         tf_matrix[:3, :3] = tf3d.euler.euler2mat(transform[3], transform[4], transform[5], axes=axes)
     else:
         tf_matrix[:3, :3] = tf3d.quaternions.quat2mat(transform[3:])
+    tf_matrix = torch.from_numpy(tf_matrix).to(points.device).float()
 
     # Perform transformation.
-    points_tf = np.ones([points.shape[0], 4], dtype=points.dtype)
+    points_tf = torch.ones([points.shape[0], 4], dtype=points.dtype)
     points_tf[:, :3] = points
     return (tf_matrix @ points_tf.T).T[:, :3]
 
@@ -415,26 +413,36 @@ def reset_wrist(gym, sim, env, wrist, joint_state):
 
 
 def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offset):
-    # TODO: Double check the frames on this.
     z_offsets = []
+    base_T_sponge = np.eye(4)
+    base_T_sponge[2, 3] = 0.036 + 0.046
+    sponge_T_base = np.eye(4)
+    sponge_T_base[2, 3] = -(0.036 + 0.046)
 
     for env_idx, (env, wrist, orientation) in enumerate(zip(envs, wrists, orientations)):
         # Determine position for tool.
-        w_R_base = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
-        base_R_des = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
-        w_R_des = w_R_base @ base_R_des
-        ax, ay, az = tf3d.euler.mat2euler(w_R_des, axes="rxyz")
+        w_T_base = np.eye(4)
+        w_T_base[:3, :3] = tf3d.quaternions.quat2mat([0.0, 1.0, 0.0, 0.0])
+
+        # Desired rotation (at sponge).
+        sponge_T_des = np.eye(4)
+        sponge_T_des[:3, :3] = tf3d.euler.euler2mat(orientation[0], orientation[1], orientation[2], axes="rxyz")
+
+        # Apply similarity transform to change rotation to apply to base.
+        base_T_des = base_T_sponge @ sponge_T_des @ sponge_T_base
+
+        w_T_des = w_T_base @ base_T_des
+        ax, ay, az = tf3d.euler.mat2euler(w_T_des, axes="rxyz")
         start_orientation = [0, 0, 0, ax, ay, az]
         z_offset = offset - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
         z_offsets.append(z_offset)
 
         # Send to pose.
-        pose = [0, 0, z_offset, ax, ay, az]
+        pose = [w_T_des[0, 3], w_T_des[1, 3], w_T_des[2, 3] + z_offset, ax, ay, az]
         reset_wrist(gym, sim, env, wrist, pose)
 
         # Transform particle positions to new pose.
-        tool_state_init[env_idx, :, :3] = torch.from_numpy(transform_points(tool_state_init[env_idx, :, :3], pose)).to(
-            "cuda:0")
+        tool_state_init[env_idx, :, :3] = transform_points(tool_state_init[env_idx, :, :3], pose)
 
     # Set particle states for tools to avoid bad initialization.
     gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init.reshape(-1, tool_state_init.shape[-1])))

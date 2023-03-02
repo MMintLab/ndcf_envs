@@ -26,18 +26,22 @@ def vis_sampled_terrain():
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
         create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist', terrain_file])
 
-    # Move to random init pose.
-    configs = np.zeros([1, 3])
-    # configs = np.array([[0.01, 0.0, 0.0]])
-    tool_state_init_ = copy.deepcopy(init_particle_state)
-    tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-    reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs, terrain_offset + 0.02)
+    # Move to random init poses.
+    # configs = np.zeros([1, 3])
+    num = 10
+    configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
 
-    while True:
-        # gym.simulate(sim)
-        # gym.fetch_results(sim, True)
-        gym.step_graphics(sim)
-        gym.draw_viewer(viewer, sim, True)
+    for idx in range(num):
+        tool_state_init_ = copy.deepcopy(init_particle_state)
+        tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
+        reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs[idx:idx + 1],
+                           terrain_offset + 0.02)
+
+        for _ in range(25):
+            gym.simulate(sim)
+            gym.fetch_results(sim, True)
+            gym.step_graphics(sim)
+            gym.draw_viewer(viewer, sim, True)
 
 
 if __name__ == '__main__':
