@@ -89,12 +89,12 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     asset_handles = load_assets(gym, sim, urdf_dir, urdfs, asset_options, fix=True,
                                 gravity=False)
     wrist_asset_handle = asset_handles[0]
-    table_asset_handle = asset_handles[1]
+    table_asset_handles = asset_handles[1:]
 
     # Create scene.
     scene_props = set_scene_props(num_envs)
     env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
-        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handle, cfg_s)
+        create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
     # Setup wrist control properties.
     set_wrist_ctrl_props(gym, env_handles, wrist_actor_handles, [1e9, 50], [1e9, 50])
@@ -111,7 +111,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state
 
 
-def set_scene_props(num_envs, env_dim=0.1):
+def set_scene_props(num_envs, env_dim=0.5):
     """
     Setup scene and environment properties.
     """
@@ -126,7 +126,7 @@ def set_scene_props(num_envs, env_dim=0.1):
     return scene_props
 
 
-def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle, cfg_s):
+def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s):
     """
     Create scene.
     """
@@ -146,6 +146,7 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle, cfg_s)
     wrist_actor_handles = []
     camera_handles = []
 
+    table_per_env = len(table_asset_handles) == props["num_envs"]
     for i in range(props["num_envs"]):
         # Create environment.
         env_handle = gym.create_env(sim, props['lower'], props['upper'], props['per_row'])
@@ -160,7 +161,9 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handle, cfg_s)
                              cfg_s["table"]["pose"]["qy"],
                              cfg_s["table"]["pose"]["qz"],
                              cfg_s["table"]["pose"]["qw"])
-        table_actor_handle = gym.create_actor(env_handle, table_asset_handle, pose, "table", group=i, filter=0,
+        table_actor_handle = gym.create_actor(env_handle,
+                                              table_asset_handles[i] if table_per_env else table_asset_handles[0], pose,
+                                              "table", group=i, filter=0,
                                               segmentationId=cfg_s["table"]["segmentation_id"])
         table_actor_handles.append(table_actor_handle)
 
@@ -412,7 +415,7 @@ def reset_wrist(gym, sim, env, wrist, joint_state):
     gym.set_actor_dof_position_targets(env, wrist, joint_state)
 
 
-def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offset):
+def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offsets):
     z_offsets = []
     base_T_sponge = np.eye(4)
     base_T_sponge[2, 3] = 0.036 + 0.046  # TODO: Parameterize based on tool?
@@ -434,7 +437,7 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
         w_T_des = w_T_base @ base_T_des
         ax, ay, az = tf3d.euler.mat2euler(w_T_des, axes="rxyz")
         start_orientation = [0, 0, 0, ax, ay, az]
-        z_offset = offset - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
+        z_offset = offsets[env_idx] - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
         z_offsets.append(z_offset)
 
         # Send to pose.

@@ -1,6 +1,7 @@
 import argparse
 from isaacgym import gymtorch
-from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrain
+from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrain, \
+    generate_primitive_terrains
 from press_simulator import *
 import mmint_utils
 
@@ -19,25 +20,24 @@ def vis_sampled_terrain():
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
 
     # Generate terrain.
-    terrain_file, terrain_offset = generate_primitive_terrain(terrain_cfg)
-    print(terrain_file)
+    terrain_files, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
 
     # Setup environment.
     gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist', terrain_file])
+        create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
     # Move to random init poses.
     # configs = np.zeros([1, 3])
-    num = 10
+    num = 10 * num_envs
     configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
 
-    for idx in range(num):
+    for idx in range(10):
         tool_state_init_ = copy.deepcopy(init_particle_state)
         tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-        reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_, configs[idx:idx + 1],
-                           terrain_offset + 0.02)
+        reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_,
+                           configs[num_envs * idx:num_envs * (idx + 1)], terrain_offsets + 0.02)
 
-        for _ in range(25):
+        for _ in range(10):
             gym.simulate(sim)
             gym.fetch_results(sim, True)
             gym.step_graphics(sim)
