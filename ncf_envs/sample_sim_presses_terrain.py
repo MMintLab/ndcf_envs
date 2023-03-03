@@ -37,6 +37,10 @@ def sample_sim_presses():
     run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
                  configs, None, init_particle_state, out)
 
+    if use_viewer:
+        gym.destroy_viewer(viewer)
+    gym.destroy_sim(sim)
+
 
 if __name__ == '__main__':
     sample_sim_presses()

@@ -60,7 +60,7 @@ def generate_ridge(ridge_cfg: dict, tool_width: float):
 
     ridge_mesh = trimesh.creation.extrude_polygon(ridge_polygon, height)
 
-    ridge_mesh.apply_translation([0.0, -amplitude, 0.0])
+    ridge_mesh.apply_translation([0.0, -amplitude + ((-tool_width / 2.0) + (np.random.random() * tool_width)), 0.0])
     return ridge_mesh, height
 
 

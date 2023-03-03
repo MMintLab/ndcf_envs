@@ -27,7 +27,6 @@ def vis_sampled_terrain():
         create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
     # Move to random init poses.
-    # configs = np.zeros([1, 3])
     num = 10 * num_envs
     configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
 
@@ -42,6 +41,9 @@ def vis_sampled_terrain():
             gym.fetch_results(sim, True)
             gym.step_graphics(sim)
             gym.draw_viewer(viewer, sim, True)
+
+    gym.destroy_viewer(viewer)
+    gym.destroy_sim(sim)
 
 
 if __name__ == '__main__':
