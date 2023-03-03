@@ -1,7 +1,5 @@
 import argparse
-from isaacgym import gymtorch
-from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrain, \
-    generate_primitive_terrains
+from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrains
 from press_simulator import *
 import mmint_utils
 

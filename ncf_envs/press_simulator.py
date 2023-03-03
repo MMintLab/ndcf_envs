@@ -567,7 +567,7 @@ def close_sim(gym, sim, viewer, use_viewer):
 
 
 def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
-                 out_folder=None, cfg_s=None):
+                 z_offsets, out_folder=None, base_idx: int = 0, cfg_s=None):
     """
         works on n = 1, e = 1
         1. detect contact
@@ -578,8 +578,6 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
-    table_offset = 0.05
-    z_offset = table_offset
     lowering_speed = -0.2  # m/s
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
@@ -590,22 +588,22 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     if not z_height_provided:
         z_heights = [None] * num_configs
 
-    for range_idx in trange(num_rounds):
+    for range_idx in range(num_rounds):
         round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
         round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
 
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(init_particle_state)
         tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offset)
+        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offsets)
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = start_z - table_offset - 0.02  # Any large value would do.
+                round_goal_z_heights[idx] = 0.0  # Any large value would do.
 
         # Lower until each environment reaches the desired height.
         t = 0
-        contact_flag = False
+        contact_flag = [False] * num_envs
         while True:
             t += 1
             # Step simulator.
@@ -620,7 +618,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
             # Set goal motions for each wrist.
             complete = True
-            for env, wrist, start_z, goal_z in zip(envs, wrists, start_zs, round_goal_z_heights):
+            for env_idx, (env, wrist, start_z, goal_z) in enumerate(zip(envs, wrists, start_zs, round_goal_z_heights)):
                 # Get current wrist pose.
                 curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
                 curr_z = curr_pos[2]
@@ -634,13 +632,13 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 curr_pos[2] = max(des_z, goal_z)
                 gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
-                # detect contact  TODO: make this compatible with multiple environments.
-                contacts = gym.get_soft_contacts(sim)
-                if len(contacts) > 0 and not contact_flag:
-                    contact_flag = True
+                # Detect contact and set goal, if no final z height provided.
+                contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(env))
+                if len(contact_points) > 0 and not contact_flag[env_idx] and not z_height_provided:
+                    contact_flag[env_idx] = True
 
                     # Set new desired pose.
-                    round_goal_z_heights[idx] = curr_z - 0.01
+                    round_goal_z_heights[env_idx] = curr_z - 0.01
 
             if complete:
                 break
@@ -656,6 +654,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 gym.clear_lines(viewer)
 
         # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)[0]
-        if out_folder is not None:
-            mmint_utils.save_gzip_pickle(results_, os.path.join(out_folder, "config_%d.pkl.gzip" % range_idx))
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)
+        for result_idx, result_ in enumerate(results_):
+            if out_folder is not None:
+                mmint_utils.save_gzip_pickle(result_, os.path.join(out_folder, "config_%d.pkl.gzip" % (
+                        base_idx + (range_idx * num_envs) + result_idx)))

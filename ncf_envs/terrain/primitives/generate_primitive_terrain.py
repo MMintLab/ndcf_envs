@@ -97,16 +97,18 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, vis=False):
     with open(os.path.join(assets_dir, urdf_path), "w") as w:
         w.write(urdf_string)
 
-    return os.path.splitext(urdf_path)[0], offset
+    return os.path.splitext(urdf_path)[0], mesh, offset
 
 
 def generate_primitive_terrains(terrain_cfg: dict, num_terrains: int, vis=False):
     terrain_urdfs = []
     terrain_offsets = []
+    terrain_meshes = []
 
     for terrain_idx in range(num_terrains):
-        terrain_urdf, terrain_offset = generate_primitive_terrain(terrain_cfg, terrain_idx, vis)
+        terrain_urdf, terrain_mesh, terrain_offset = generate_primitive_terrain(terrain_cfg, terrain_idx, vis)
         terrain_urdfs.append(terrain_urdf)
         terrain_offsets.append(terrain_offset)
+        terrain_meshes.append(terrain_mesh)
 
-    return terrain_urdfs, np.array(terrain_offsets)
+    return terrain_urdfs, terrain_meshes, np.array(terrain_offsets)
