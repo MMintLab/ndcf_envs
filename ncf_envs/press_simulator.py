@@ -92,7 +92,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     table_asset_handles = asset_handles[1:]
 
     # Create scene.
-    scene_props = set_scene_props(num_envs)
+    scene_props = set_scene_props(num_envs, 0.1)
     env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
         create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
@@ -210,7 +210,7 @@ def create_sim(gym):
     sim_params = gymapi.SimParams()
     sim_params.dt = 1.0e-3  # Control frequency
     sim_params.substeps = 1  # Physics simulation frequency (multiplier)
-    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.8)  # 0.0)
     sim_params.up_axis = gymapi.UpAxis.UP_AXIS_Z
     sim_params.use_gpu_pipeline = False
 
@@ -568,12 +568,6 @@ def close_sim(gym, sim, viewer, use_viewer):
 
 def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
                  z_offsets, out_folder=None, base_idx: int = 0, cfg_s=None):
-    """
-        works on n = 1, e = 1
-        1. detect contact
-        2. press fixed amount after the contact
-    """
-
     # Wrap particle
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
@@ -618,6 +612,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
             # Set goal motions for each wrist.
             complete = True
+            contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
             for env_idx, (env, wrist, start_z, goal_z) in enumerate(zip(envs, wrists, start_zs, round_goal_z_heights)):
                 # Get current wrist pose.
                 curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
@@ -628,13 +623,12 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                     complete = False
 
                 # Set new desired pose.
-                des_z = start_z + (lowering_speed * dt * t)
-                curr_pos[2] = max(des_z, goal_z)
+                # des_z = start_z + (lowering_speed * dt * t)
+                # curr_pos[2] = max(des_z, goal_z)
                 gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
                 # Detect contact and set goal, if no final z height provided.
-                contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(env))
-                if len(contact_points) > 0 and not contact_flag[env_idx] and not z_height_provided:
+                if len(contact_points[env_idx]) > 0 and not contact_flag[env_idx] and not z_height_provided:
                     contact_flag[env_idx] = True
 
                     # Set new desired pose.
