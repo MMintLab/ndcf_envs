@@ -93,7 +93,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
 
     # Create scene.
     scene_props = set_scene_props(num_envs, 0.5)
-    env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
+    env_handles, table_actor_handles, wrist_actor_handles = \
         create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
     # Setup wrist control properties.
@@ -108,7 +108,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     # Get initial config of particles.
     init_particle_state = get_init_particle_state(gym, sim)
 
-    return gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state
+    return gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state
 
 
 def set_scene_props(num_envs, env_dim=0.5):
@@ -144,7 +144,6 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s
     env_handles = []
     table_actor_handles = []
     wrist_actor_handles = []
-    camera_handles = []
 
     table_per_env = len(table_asset_handles) == props["num_envs"]
     for i in range(props["num_envs"]):
@@ -180,25 +179,7 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s
                                               segmentationId=cfg_s["wrist"]["segmentation_id"])
         wrist_actor_handles.append(wrist_actor_handle)
 
-        # Create cameras.
-        camera_1_pose = [0.2, 0.0, 0.1 + np.random.random() * 0.2]
-        camera_2_pose = [0.2, 0.2, 0.1 + np.random.random() * 0.2]
-        camera_3_pose = [0.2, -0.2, 0.1 + np.random.random() * 0.2]
-        env_camera_handles = []
-        for camera_pose in [camera_1_pose, camera_2_pose, camera_3_pose]:
-            camera_props = gymapi.CameraProperties()
-            camera_props.width = 512
-            camera_props.height = 512
-            camera_handle = gym.create_camera_sensor(env_handle, camera_props)
-            gym.set_camera_location(camera_handle, env_handle,
-                                    gymapi.Vec3(camera_pose[0], camera_pose[1], camera_pose[2]),
-                                    gymapi.Vec3(-0.01 + np.random.random() * 0.02,
-                                                -0.01 + np.random.random() * 0.02,
-                                                -0.01 + np.random.random() * 0.02))
-            env_camera_handles.append(camera_handle)
-        camera_handles.append(env_camera_handles)
-
-    return env_handles, table_actor_handles, wrist_actor_handles, camera_handles
+    return env_handles, table_actor_handles, wrist_actor_handles
 
 
 def create_sim(gym):
@@ -646,7 +627,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                     contact_flag[env_idx] = True
 
                     # Set new desired pose.
-                    round_goal_z_heights[env_idx] = curr_z - 0.01
+                    press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
+                    round_goal_z_heights[env_idx] = curr_z - press_distance
 
             if complete:
                 break
@@ -662,7 +644,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                 gym.clear_lines(viewer)
 
         # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, True)
+        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, len(cameras) > 0)
         for result_idx, result_ in enumerate(results_):
             if out_folder is not None:
                 mmint_utils.save_gzip_pickle(result_, os.path.join(out_folder, "config_%d.pkl.gzip" % (

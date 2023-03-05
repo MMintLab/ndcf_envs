@@ -20,7 +20,7 @@ def generate_box(box_cfg: dict, tool_width: float):
 def generate_cylinder(cylinder_cfg: dict, tool_width: float):
     radius = 0.02 + (np.random.random() * (0.14 - 0.02))
     height = tool_width
-    cylinder = trimesh.creation.cylinder(radius, segment=[[-height, 0.0, 0.0], [height, 0.0, 0.0]])
+    cylinder = trimesh.creation.cylinder(radius, sections=500, segment=[[-height, 0.0, 0.0], [height, 0.0, 0.0]])
 
     # Half the time, lower straight into cylinder. Other half, lower near edge.
     if np.random.random() < 0.5:

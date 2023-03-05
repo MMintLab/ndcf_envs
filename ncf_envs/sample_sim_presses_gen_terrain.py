@@ -45,11 +45,11 @@ def sample_sim_presses():
         round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
 
         # Setup environment.
-        gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
+        gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
             create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
         # Run simulation with sampled configurations.
-        run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
+        run_sim_loop(gym, sim, env_handles, wrist_actor_handles, [], viewer, use_viewer,
                      round_configs, None, init_particle_state, terrain_offsets + 0.002, out, base_idx=base_idx)
 
         # Save mesh used. Here we know we use each env only once.
