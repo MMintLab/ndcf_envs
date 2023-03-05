@@ -8,15 +8,16 @@ from isaacgym import gymutil
 import numpy as np
 import transforms3d as tf3d
 import torch
-from tqdm import trange
 
 import mmint_utils
+
 import ncf_envs.utils.utils as utils
 import ncf_envs.utils.real_utils as real_utils
 
 
 # Simulate pressing deformable tool into surface.
-# Some code borrowed from: https://sites.google.com/nvidia.com/tactiledata2
+# Some code copied/modified from: https://sites.google.com/nvidia.com/tactiledata2
+
 
 def load_real_world_examples(run_dir):
     # Load real world run data.
@@ -86,13 +87,12 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     # Load table/wrist asset.
     urdf_dir = "assets"
     asset_options = set_asset_options()
-    asset_handles = load_assets(gym, sim, urdf_dir, urdfs, asset_options, fix=True,
-                                gravity=False)
+    asset_handles = load_assets(gym, sim, urdf_dir, urdfs, asset_options, fix=True, gravity=False)
     wrist_asset_handle = asset_handles[0]
     table_asset_handles = asset_handles[1:]
 
     # Create scene.
-    scene_props = set_scene_props(num_envs, 0.1)
+    scene_props = set_scene_props(num_envs, 0.5)
     env_handles, table_actor_handles, wrist_actor_handles, camera_handles = \
         create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
@@ -210,7 +210,7 @@ def create_sim(gym):
     sim_params = gymapi.SimParams()
     sim_params.dt = 1.0e-3  # Control frequency
     sim_params.substeps = 1  # Physics simulation frequency (multiplier)
-    sim_params.gravity = gymapi.Vec3(0.0, 0.0, -9.8)  # 0.0)
+    sim_params.gravity = gymapi.Vec3(0.0, 0.0, 0.0)
     sim_params.up_axis = gymapi.UpAxis.UP_AXIS_Z
     sim_params.use_gpu_pipeline = False
 
@@ -313,7 +313,7 @@ def get_wrist_dof_info(gym, env, wrist):
     return dof_states["pos"].copy(), dof_states["vel"].copy()
 
 
-def get_contact_info(gym, sim, rigid_body_per_env):
+def get_contact_info(gym, sim, rigid_body_per_env, num_particles_per_env):
     """
     Extract the net force vector on the wrist.
     """
@@ -322,6 +322,7 @@ def get_contact_info(gym, sim, rigid_body_per_env):
     contact_forces = defaultdict(list)
     contact_points = defaultdict(list)
     contact_normals = defaultdict(list)
+    contact_all_info = defaultdict(list)
     for contact in contacts:
         rigid_body_index = contact[4]
         contact_normal = np.array([*contact[6]])
@@ -332,15 +333,24 @@ def get_contact_info(gym, sim, rigid_body_per_env):
         contact_points[env_index].append(list(contact[5]))
         contact_normals[env_index].append(list(contact_normal))
 
+        # Offset particle indices to be environment specific.
+        particle_indices = contact["particleIndices"]
+        correct_particle_indices = tuple(
+            [part_ind - (env_index * num_particles_per_env) for part_ind in particle_indices])
+        contact["particleIndices"] = correct_particle_indices
+        contact_all_info[env_index].append(contact)
+
     contact_forces_ = []
     contact_points_ = []
     contact_normals_ = []
+    contact_all_info_ = []
     for env_idx in range(num_envs):
         contact_points_.append(contact_points[env_idx])
         contact_forces_.append(contact_forces[env_idx])
         contact_normals_.append(contact_normals[env_idx])
+        contact_all_info_.append(contact_all_info[env_idx])
 
-    return contact_points_, contact_forces_, contact_normals_, contacts
+    return contact_points_, contact_forces_, contact_normals_, contact_all_info_
 
 
 def get_init_particle_state(gym, sim):
@@ -416,11 +426,11 @@ def reset_wrist(gym, sim, env, wrist, joint_state):
 
 
 def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, offsets):
-    z_offsets = []
     base_T_sponge = np.eye(4)
     base_T_sponge[2, 3] = 0.036 + 0.046  # TODO: Parameterize based on tool?
     sponge_T_base = np.eye(4)
     sponge_T_base[2, 3] = -(0.036 + 0.046)
+    start_zs = []
 
     for env_idx, (env, wrist, orientation) in enumerate(zip(envs, wrists, orientations)):
         # Determine position for tool.
@@ -436,12 +446,13 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
 
         w_T_des = w_T_base @ base_T_des
         ax, ay, az = tf3d.euler.mat2euler(w_T_des, axes="rxyz")
-        start_orientation = [0, 0, 0, ax, ay, az]
-        z_offset = offsets[env_idx] - min(transform_points(tool_state_init[env_idx, :, :3], start_orientation)[:, 2])
-        z_offsets.append(z_offset)
+        start_orientation = [w_T_des[0, 3], w_T_des[1, 3], w_T_des[2, 3], ax, ay, az]
+        start_rotated_points = transform_points(tool_state_init[env_idx, :, :3], start_orientation)
+        z_offset = offsets[env_idx] - min(start_rotated_points[:, 2])
 
         # Send to pose.
         pose = [w_T_des[0, 3], w_T_des[1, 3], w_T_des[2, 3] + z_offset, ax, ay, az]
+        start_zs.append(pose[2])
         reset_wrist(gym, sim, env, wrist, pose)
 
         # Transform particle positions to new pose.
@@ -450,7 +461,7 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
     # Set particle states for tools to avoid bad initialization.
     gym.set_particle_state_tensor(sim, gymtorch.unwrap_tensor(tool_state_init.reshape(-1, tool_state_init.shape[-1])))
 
-    return z_offsets
+    return start_zs
 
 
 def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
@@ -485,10 +496,11 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
 
     # Get mesh deformations for all envs.
     nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
+    num_particles_per_env = nodal_coords.shape[1]
 
     # Get contact information for all envs.
     contact_points, contact_forces, contact_normals, soft_contacts = get_contact_info(
-        gym, sim, gym.get_env_rigid_body_count(envs[0])
+        gym, sim, gym.get_env_rigid_body_count(envs[0]), num_particles_per_env
     )
     results = []
     for env_idx, (env, wrist) in enumerate(zip(envs, wrists)):
@@ -522,7 +534,7 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
             "mount_pose": mount_pose,
             "wrist_wrench": wrist_wrench,
             "env_origin": np.array([env_origin.x, env_origin.y, env_origin.z]),
-            "all_contact": soft_contacts,
+            "all_contact": np.array(soft_contacts[env_idx]),
         }
 
         if render_cameras:
@@ -578,6 +590,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     num_configs = len(configs)
     num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
     z_height_provided = z_heights is not None
+    num_particles_per_env = int(len(init_particle_state) / num_envs)
 
     if not z_height_provided:
         z_heights = [None] * num_configs
@@ -593,7 +606,7 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
         if not z_height_provided:
             for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = 0.0  # Any large value would do.
+                round_goal_z_heights[idx] = 0.0
 
         # Lower until each environment reaches the desired height.
         t = 0
@@ -612,7 +625,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
 
             # Set goal motions for each wrist.
             complete = True
-            contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]))
+            contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]),
+                                                       num_particles_per_env)
             for env_idx, (env, wrist, start_z, goal_z) in enumerate(zip(envs, wrists, start_zs, round_goal_z_heights)):
                 # Get current wrist pose.
                 curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
@@ -623,8 +637,8 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
                     complete = False
 
                 # Set new desired pose.
-                # des_z = start_z + (lowering_speed * dt * t)
-                # curr_pos[2] = max(des_z, goal_z)
+                des_z = start_z + (lowering_speed * dt * t)
+                curr_pos[2] = max(des_z, goal_z)
                 gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
                 # Detect contact and set goal, if no final z height provided.

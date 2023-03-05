@@ -185,7 +185,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     pressure = wrist_f_norm / contact_area
 
     # Some visualization for contact verts/tris.
-    if vis and False:
+    if vis:
         contact_points_vedo = Points(contact_points, c="r")
         tri_colors = [[255, 0, 0, 255] if c else [255, 255, 0, 255] for c in contact_triangles]
         tri_mesh_vedo_contact = Mesh([tri_vert, tri_triangles])
@@ -199,7 +199,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
 
         contact_vertices_data = def_vert[np.array([list(c) for c in all_contacts["particleIndices"]]).flatten()]
 
-        plt = Plotter(shape=(1, 3))
+        plt = Plotter(shape=(2, 2))
         plt.at(0).show(contact_points_vedo, tri_mesh_vedo_contact,
                        Arrows(contact_points, contact_points + 0.01 * contact_forces),
                        Points(contact_vertices_data, c="purple"),
@@ -208,6 +208,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
                        Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
         plt.at(2).show(contact_points_vedo, tri_mesh_vedo_contact,
                        contact_normals_vedo, "Contact Normals")
+        if terrain_file is not None:
+            plt.at(3).show(tri_mesh_vedo_contact, terrain_mesh)
         plt.interactive().close()
 
     # Load and process partial views from cameras.
@@ -243,7 +245,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
                 "camera_pose": cam_wrist_pose,
             })
         combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-        if vis:
+        if vis and False:
             vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
     else:
         partial_pc_data = []
@@ -304,7 +306,6 @@ if __name__ == '__main__':
     parser.add_argument("data_dir", type=str, help="Data dir.")
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
     parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
-    parser.add_argument("-t", "--terrain", type=str, default=None, help="Terrain file used in interaction (if any).")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
     parser.set_defaults(vis=False)
     args = parser.parse_args()
@@ -320,6 +321,7 @@ if __name__ == '__main__':
     for data_idx in trange(len(data_fns)):
         data_fn = os.path.join(data_dir_, data_fns[data_idx])
         example_name_ = "out_%d" % data_idx
+        terrain_file_ = os.path.join(data_dir_, "mesh_%d.obj" % data_idx)
 
         process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir_, example_name_, out_dir=args.out,
-                                 terrain_file=args.terrain, vis=args.vis)
+                                 terrain_file=terrain_file_, vis=args.vis)

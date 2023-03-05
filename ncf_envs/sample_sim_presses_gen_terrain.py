@@ -1,5 +1,7 @@
 import argparse
 
+from tqdm import trange
+
 from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrains
 from press_simulator import *
 import mmint_utils
@@ -48,7 +50,7 @@ def sample_sim_presses():
 
         # Run simulation with sampled configurations.
         run_sim_loop(gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, use_viewer,
-                     round_configs, None, init_particle_state, terrain_offsets + 0.01, out, base_idx=base_idx)
+                     round_configs, None, init_particle_state, terrain_offsets + 0.002, out, base_idx=base_idx)
 
         # Save mesh used. Here we know we use each env only once.
         for env_idx in range(num_envs):

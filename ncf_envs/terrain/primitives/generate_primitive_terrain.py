@@ -1,9 +1,7 @@
 import os
-import matplotlib.pyplot as plt
 import numpy as np
 import trimesh.creation
 import shapely
-from shapely.plotting import plot_polygon
 
 
 def generate_box(box_cfg: dict, tool_width: float):
@@ -20,7 +18,7 @@ def generate_box(box_cfg: dict, tool_width: float):
 
 
 def generate_cylinder(cylinder_cfg: dict, tool_width: float):
-    radius = 0.02 + (np.random.random() * (0.2 - 0.02))
+    radius = 0.02 + (np.random.random() * (0.14 - 0.02))
     height = tool_width
     cylinder = trimesh.creation.cylinder(radius, segment=[[-height, 0.0, 0.0], [height, 0.0, 0.0]])
 
@@ -46,7 +44,7 @@ def generate_ridge(ridge_cfg: dict, tool_width: float):
         amplitude = 0.0
         y = [0.0] * num_points
     else:
-        amplitude = 0.0 + (np.random.random() * 0.04)
+        amplitude = 0.0 + (np.random.random() * 0.06)
         coords = (x + tool_width) / length
         y = np.sin(coords * np.pi) * amplitude
 
