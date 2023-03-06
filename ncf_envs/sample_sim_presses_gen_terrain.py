@@ -10,6 +10,7 @@ import mmint_utils
 def sample_sim_presses():
     parser = argparse.ArgumentParser()
     parser.add_argument("terrain_cfg", type=str, help="Terrain configuration file.")
+    parser.add_argument('--cuda_id', type=int, default=0, help="Cuda device id to use.")
     parser.add_argument("--out", "-o", type=str, help="Directory to store results")
     parser.add_argument("--num", "-n", type=int, default=100, help="Number of presses to simulate.")
     parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
@@ -21,6 +22,7 @@ def sample_sim_presses():
     use_viewer = args.viewer
     num_envs = args.num_envs
     num = args.num
+    cuda_id = args.cuda_id
 
     terrain_cfg = mmint_utils.load_cfg(args.terrain_cfg)
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
@@ -46,7 +48,7 @@ def sample_sim_presses():
 
         # Setup environment.
         gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
-            create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
+            create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
 
         # Run simulation with sampled configurations.
         run_sim_loop(gym, sim, env_handles, wrist_actor_handles, [], viewer, use_viewer,

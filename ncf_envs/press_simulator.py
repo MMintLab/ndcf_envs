@@ -77,12 +77,12 @@ def load_real_world_horizontal_examples(run_dir):
 
 
 def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None,
-                     urdfs: list = ['urdf/wrist', 'urdf/table']):
+                     urdfs: list = ['urdf/wrist', 'urdf/table'], cuda_id: int = 0):
     # Setup simulator.
     gym = gymapi.acquire_gym()
 
     # Setup sim object.
-    sim = create_sim(gym)
+    sim = create_sim(gym, cuda_id)
 
     # Load table/wrist asset.
     urdf_dir = "assets"
@@ -182,7 +182,7 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s
     return env_handles, table_actor_handles, wrist_actor_handles
 
 
-def create_sim(gym):
+def create_sim(gym, gpu_id: int):
     """
     Setup simulation parameters.
     """
@@ -213,9 +213,7 @@ def create_sim(gym):
     sim_params.flex.friction_mode = 2  # Friction about all 3 axes (including torsional)
     sim_params.flex.dynamic_friction = 1.0
 
-    gpu_physics = 0
-    gpu_render = 0
-    sim = gym.create_sim(gpu_physics, gpu_render, sim_type, sim_params)
+    sim = gym.create_sim(gpu_id, gpu_id, sim_type, sim_params)
 
     return sim
 
