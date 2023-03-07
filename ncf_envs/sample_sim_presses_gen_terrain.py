@@ -59,9 +59,9 @@ def sample_sim_presses():
             mesh_fn = os.path.join(out, "mesh_%d.obj" % (base_idx + env_idx))
             terrain_meshes[env_idx].export(mesh_fn)
 
-        if use_viewer:
-            gym.destroy_viewer(viewer)
-        gym.destroy_sim(sim)
+        # if use_viewer:
+        #     gym.destroy_viewer(viewer)
+        # gym.destroy_sim(sim)
 
 
 if __name__ == '__main__':

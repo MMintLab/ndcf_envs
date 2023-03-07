@@ -18,10 +18,10 @@ def vis_sampled_terrain():
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
 
     # Generate terrain.
-    terrain_files, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
+    terrain_files, _, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
 
     # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, camera_handles, viewer, init_particle_state = \
+    gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
         create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
     # Move to random init poses.
