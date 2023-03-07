@@ -444,6 +444,11 @@ def reset_wrist_offset(gym, sim, envs, wrists, tool_state_init, orientations, of
 
 
 def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
+    wrist_wrench = np.zeros(6, dtype=float)
+
+    if len(contact_points) == 0:
+        return wrist_wrench
+
     w_T_wrist_pose = utils.pose_to_matrix(wrist_pose, axes="rxyz")
     wrist_pose_T_w = np.linalg.inv(w_T_wrist_pose)
 
@@ -455,7 +460,6 @@ def get_wrist_wrench(contact_points, contact_forces, wrist_pose):
     contact_forces_w = np.array(contact_forces)
     contact_forces = -utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
 
-    wrist_wrench = np.zeros(6, dtype=float)
     wrist_wrench[:3] = contact_forces.sum(axis=0)
     wrist_wrench[3:] = np.cross(contact_points, contact_forces).sum(axis=0)
 
