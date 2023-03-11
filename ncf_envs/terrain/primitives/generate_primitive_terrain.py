@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import transforms3d.euler
 import trimesh.creation
 import shapely
 
@@ -17,23 +18,48 @@ def generate_box(box_cfg: dict, tool_width: float):
     return box, height
 
 
-def generate_cylinder(cylinder_cfg: dict, tool_width: float):
-    radius = 0.02 + (np.random.random() * (0.14 - 0.02))
-    height = tool_width
-    cylinder = trimesh.creation.cylinder(radius, sections=500, segment=[[-height, 0.0, 0.0], [height, 0.0, 0.0]])
+def generate_curved_surface(cylinder_cfg: dict, tool_width: float):
+    concave = np.random.random() < 0.5
+    num_points = 100
+    y = np.random.random() * 0.1
+    l_ = tool_width + 0.01 + np.random.random() * 0.02 if concave else 0.02 + np.random.random() * 0.03
+    r = np.sqrt(l_ ** 2 + y ** 2)
+    theta_0 = np.arctan2(y, l_)
 
-    # Half the time, lower straight into cylinder. Other half, lower near edge.
-    if np.random.random() < 0.5:
-        x_translation = y_translation = 0.0
+    polygon_points = np.array([
+        [r * np.cos(theta), r * np.sin(theta) - y] for theta in
+        np.linspace(theta_0, np.pi - theta_0, num=num_points)
+    ])
+    if concave:
+        polygon_points[:, 1] *= -1.0
+        polygon_points[:, 1] += abs(min(polygon_points[:, 1])) + 0.01
     else:
-        x_translation = (0.5 * tool_width) + (np.random.random() * tool_width)
-        y_translation = 0.0 + (np.random.random() * radius)
-    cylinder.apply_translation([x_translation, y_translation, radius])
+        polygon_points[:, 1] += 0.01
+    polygon_points = list(polygon_points)
+    polygon_points.extend([
+        [-l_, 0], [l_, 0], [l_, 0.01]
+    ])
+    polygon = shapely.Polygon(polygon_points)
 
-    return cylinder, 2 * radius
+    curve_mesh = trimesh.creation.extrude_polygon(polygon, 2 * tool_width)
+
+    transform_ = np.eye(4)
+    transform_[:3, :3] = transforms3d.euler.euler2mat(np.pi / 2.0, 0.0, 0.0)
+    transform_[1, 3] = tool_width
+
+    # Half the time, lower straight into block. Other half, lower near edge.
+    if not concave and np.random.random() < 0.5:
+        xy_translation = np.array([0.0, (0.5 * tool_width) + (np.random.random() * tool_width)])
+    else:
+        xy_translation = np.zeros([2])
+    transform_[:2, 3] += xy_translation
+
+    curve_mesh.apply_transform(transform_)
+    return curve_mesh, r - y + 0.01
 
 
 def generate_ridge(ridge_cfg: dict, tool_width: float):
+    # TODO: Update to using semi-circle alg?
     length = 2 * tool_width
     ridge_width = 0.005 + (np.random.random() * 0.005)
     num_points = 100
@@ -77,8 +103,8 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, vis=False):
 
     if terrain_type == "box":
         mesh, offset = generate_box(terrain_cfg, tool_width)
-    elif terrain_type == "cylinder":
-        mesh, offset = generate_cylinder(terrain_cfg, tool_width)
+    elif terrain_type == "curve":
+        mesh, offset = generate_curved_surface(terrain_cfg, tool_width)
     elif terrain_type == "ridge":
         mesh, offset = generate_ridge(terrain_cfg, tool_width)
     else:
