@@ -1,7 +1,7 @@
 import argparse
 
 from tqdm import trange
-
+from isaacgym import gymapi
 from ncf_envs.terrain.primitives.generate_primitive_terrain import generate_primitive_terrains
 from press_simulator import *
 import mmint_utils
@@ -23,6 +23,9 @@ def sample_sim_presses():
     num_envs = args.num_envs
     num = args.num
     cuda_id = args.cuda_id
+
+    # Acquire singleton object.
+    gym = gymapi.acquire_gym()
 
     terrain_cfg = mmint_utils.load_cfg(args.terrain_cfg)
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
@@ -47,8 +50,8 @@ def sample_sim_presses():
         round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
 
         # Setup environment.
-        gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
-            create_simulator(num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
+        sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
+            create_simulator(gym, num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
 
         # Run simulation with sampled configurations.
         run_sim_loop(gym, sim, env_handles, wrist_actor_handles, [], viewer, use_viewer,
@@ -59,9 +62,8 @@ def sample_sim_presses():
             mesh_fn = os.path.join(out, "mesh_%d.obj" % (base_idx + env_idx))
             terrain_meshes[env_idx].export(mesh_fn)
 
-        # if use_viewer:
-        #     gym.destroy_viewer(viewer)
-        # gym.destroy_sim(sim)
+        gym.destroy_viewer(viewer)
+        gym.destroy_sim(sim)
 
 
 if __name__ == '__main__':

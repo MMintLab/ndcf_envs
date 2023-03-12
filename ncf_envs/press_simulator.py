@@ -76,11 +76,8 @@ def load_real_world_horizontal_examples(run_dir):
     return real_configs, press_zs, real_wrenches
 
 
-def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None,
+def create_simulator(gym, num_envs: int, use_viewer: bool = False, cfg_s: dict = None,
                      urdfs: list = ['urdf/wrist', 'urdf/table'], cuda_id: int = 0):
-    # Setup simulator.
-    gym = gymapi.acquire_gym()
-
     # Setup sim object.
     sim = create_sim(gym, cuda_id)
 
@@ -108,7 +105,7 @@ def create_simulator(num_envs: int, use_viewer: bool = False, cfg_s: dict = None
     # Get initial config of particles.
     init_particle_state = get_init_particle_state(gym, sim)
 
-    return gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state
+    return sim, env_handles, wrist_actor_handles, viewer, init_particle_state
 
 
 def set_scene_props(num_envs, env_dim=0.5):
@@ -596,6 +593,10 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
         contact_flag = [False] * num_envs
         while True:
             t += 1
+
+            if t > 2000:
+                break
+
             # Step simulator.
             gym.simulate(sim)
             gym.fetch_results(sim, True)
