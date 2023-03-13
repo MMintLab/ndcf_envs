@@ -88,7 +88,7 @@ def generate_ridge(ridge_cfg: dict, tool_width: float):
     return ridge_mesh, height
 
 
-def generate_primitive_terrain(terrain_cfg: dict, idx: int, vis=False):
+def generate_primitive_terrain(terrain_cfg: dict, idx: int, out_dir: str = None, vis=False):
     assets_dir = "assets"
     primitives_mesh_dir = "meshes/primitives/"
     primitives_urdf_dir = "urdf/primitives/"
@@ -115,6 +115,10 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, vis=False):
     mesh_path = os.path.join(primitives_mesh_dir, "terrain_%d.obj" % idx)
     mesh.export(os.path.join(assets_dir, mesh_path))
 
+    # Also save to out dir (if provided).
+    if out_dir is not None:
+        mesh.export(os.path.join(out_dir, "terrain_%d.obj" % idx))
+
     # Load into urdf.
     urdf_string = urdf_string % (mesh_path, mesh_path)
     urdf_path = os.path.join(primitives_urdf_dir, "terrain_%d.urdf" % idx)
@@ -124,13 +128,13 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, vis=False):
     return os.path.splitext(urdf_path)[0], mesh, offset
 
 
-def generate_primitive_terrains(terrain_cfg: dict, num_terrains: int, vis=False):
+def generate_primitive_terrains(terrain_cfg: dict, num_terrains: int, out_dir: str = None, vis=False):
     terrain_urdfs = []
     terrain_offsets = []
     terrain_meshes = []
 
     for terrain_idx in range(num_terrains):
-        terrain_urdf, terrain_mesh, terrain_offset = generate_primitive_terrain(terrain_cfg, terrain_idx, vis)
+        terrain_urdf, terrain_mesh, terrain_offset = generate_primitive_terrain(terrain_cfg, terrain_idx, out_dir, vis)
         terrain_urdfs.append(terrain_urdf)
         terrain_offsets.append(terrain_offset)
         terrain_meshes.append(terrain_mesh)

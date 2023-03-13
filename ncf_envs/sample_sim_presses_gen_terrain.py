@@ -23,6 +23,7 @@ def sample_sim_presses():
     num_envs = args.num_envs
     num = args.num
     cuda_id = args.cuda_id
+    assert num % num_envs == 0, "Num sims to run should be divisible by num environments."
 
     # Acquire singleton object.
     gym = gymapi.acquire_gym()
@@ -38,32 +39,19 @@ def sample_sim_presses():
     if out is not None:
         mmint_utils.make_dir(out)
 
-    num_rounds = num // num_envs  # Assumes num is cleanly divisible.
+    # Generate terrain.
+    terrain_files, terrain_meshes, terrain_offsets = generate_primitive_terrains(terrain_cfg, num, out_dir=out)
 
-    for round_idx in trange(num_rounds):
-        base_idx = round_idx * num_envs
+    # Setup environment.
+    sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state = \
+        create_simulator(gym, num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
 
-        # Generate terrain.
-        terrain_files, terrain_meshes, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
+    # Run simulation with sampled configurations.
+    run_sim_loop(gym, sim, env_handles, wrist_actor_handles, terrain_actor_handles, [], viewer, use_viewer,
+                 configs, None, init_particle_state, terrain_offsets + 0.002, out)
 
-        # Pull out configs for this round.
-        round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
-
-        # Setup environment.
-        sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
-            create_simulator(gym, num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
-
-        # Run simulation with sampled configurations.
-        run_sim_loop(gym, sim, env_handles, wrist_actor_handles, [], viewer, use_viewer,
-                     round_configs, None, init_particle_state, terrain_offsets + 0.002, out, base_idx=base_idx)
-
-        # Save mesh used. Here we know we use each env only once.
-        for env_idx in range(num_envs):
-            mesh_fn = os.path.join(out, "mesh_%d.obj" % (base_idx + env_idx))
-            terrain_meshes[env_idx].export(mesh_fn)
-
-        gym.destroy_viewer(viewer)
-        gym.destroy_sim(sim)
+    gym.destroy_viewer(viewer)
+    gym.destroy_sim(sim)
 
 
 if __name__ == '__main__':

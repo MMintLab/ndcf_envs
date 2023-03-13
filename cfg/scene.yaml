@@ -1,14 +1,11 @@
-terrain:
-  type: 'discrete_obstacle' # 'wave_terrain
-
 plane:
-  normal: [0, 0, 1]
-  segmentation_id : 1
-  static_friction : 1
-  dynamic_friction : 1
-  distance : 0.001
+  normal: [ 0, 0, 1 ]
+  segmentation_id: 1
+  static_friction: 1
+  dynamic_friction: 1
+  distance: 0.001
 
-table:
+terrain:
   pose:
     x: 0.0
     y: 0.0
@@ -17,7 +14,7 @@ table:
     qy: 0.0
     qz: 0.0
     qw: 1.0
-  segmentation_id : 2
+  segmentation_id: 2
 
 wrist:
   pose:
@@ -28,4 +25,4 @@ wrist:
     qy: 0.0
     qz: 0.0
     qw: 1.0
-  segmentation_id : 1
+  segmentation_id: 1

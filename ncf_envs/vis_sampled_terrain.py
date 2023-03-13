@@ -17,12 +17,15 @@ def vis_sampled_terrain():
     terrain_cfg = mmint_utils.load_cfg(args.terrain_cfg)
     cfg_s = mmint_utils.load_cfg(args.cfg_s)
 
+    # Acquire singleton object.
+    gym = gymapi.acquire_gym()
+
     # Generate terrain.
     terrain_files, _, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
 
     # Setup environment.
-    gym, sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
-        create_simulator(num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
+    sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
+        create_simulator(gym, num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
     # Move to random init poses.
     num = 10 * num_envs
@@ -34,11 +37,12 @@ def vis_sampled_terrain():
         reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_,
                            configs[num_envs * idx:num_envs * (idx + 1)], terrain_offsets + 0.02)
 
-        for _ in range(10):
-            gym.simulate(sim)
-            gym.fetch_results(sim, True)
-            gym.step_graphics(sim)
-            gym.draw_viewer(viewer, sim, True)
+    # for _ in range(10000):
+    while not gym.query_viewer_has_closed(viewer):
+        gym.simulate(sim)
+        gym.fetch_results(sim, True)
+        gym.step_graphics(sim)
+        gym.draw_viewer(viewer, sim, True)
 
     gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)

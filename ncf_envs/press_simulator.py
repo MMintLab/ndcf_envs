@@ -1,5 +1,6 @@
 import copy
 import os
+import pdb
 from collections import defaultdict
 
 from isaacgym import gymapi
@@ -89,8 +90,8 @@ def create_simulator(gym, num_envs: int, use_viewer: bool = False, cfg_s: dict =
     table_asset_handles = asset_handles[1:]
 
     # Create scene.
-    scene_props = set_scene_props(num_envs, 0.5)
-    env_handles, table_actor_handles, wrist_actor_handles = \
+    scene_props = set_scene_props(num_envs, 0.2)
+    env_handles, terrain_actor_handles, wrist_actor_handles = \
         create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
     # Setup wrist control properties.
@@ -105,7 +106,7 @@ def create_simulator(gym, num_envs: int, use_viewer: bool = False, cfg_s: dict =
     # Get initial config of particles.
     init_particle_state = get_init_particle_state(gym, sim)
 
-    return sim, env_handles, wrist_actor_handles, viewer, init_particle_state
+    return sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state
 
 
 def set_scene_props(num_envs, env_dim=0.5):
@@ -123,10 +124,12 @@ def set_scene_props(num_envs, env_dim=0.5):
     return scene_props
 
 
-def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s):
+def create_scene(gym, sim, props, wrist_asset_handle, terrain_asset_handles, cfg_s):
     """
     Create scene.
     """
+    num_envs = props["num_envs"]
+
     # Add plane.
     plane_params = gymapi.PlaneParams()
     plane_params.normal = gymapi.Vec3(cfg_s["plane"]["normal"][0],
@@ -138,30 +141,16 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s
     plane_params.distance = cfg_s["plane"]["distance"]
     gym.add_ground(sim, plane_params)
 
+    # Load environments and associated wrists and terrains.
+    # Terrains are split between the environments and placed at an offset location out of the way.
     env_handles = []
-    table_actor_handles = []
     wrist_actor_handles = []
-
-    table_per_env = len(table_asset_handles) == props["num_envs"]
-    for i in range(props["num_envs"]):
+    terrain_actor_handles = [[]] * num_envs
+    terrains_per_env = len(terrain_asset_handles) // num_envs
+    for env_idx in range(num_envs):
         # Create environment.
         env_handle = gym.create_env(sim, props['lower'], props['upper'], props['per_row'])
         env_handles.append(env_handle)
-
-        # Create tabletop.
-        pose = gymapi.Transform()
-        pose.p = gymapi.Vec3(cfg_s["table"]["pose"]["x"],
-                             cfg_s["table"]["pose"]["y"],
-                             cfg_s["table"]["pose"]["z"])
-        pose.r = gymapi.Quat(cfg_s["table"]["pose"]["qx"],
-                             cfg_s["table"]["pose"]["qy"],
-                             cfg_s["table"]["pose"]["qz"],
-                             cfg_s["table"]["pose"]["qw"])
-        table_actor_handle = gym.create_actor(env_handle,
-                                              table_asset_handles[i] if table_per_env else table_asset_handles[0], pose,
-                                              "table", group=i, filter=0,
-                                              segmentationId=cfg_s["table"]["segmentation_id"])
-        table_actor_handles.append(table_actor_handle)
 
         # Create wrist.
         pose = gymapi.Transform()
@@ -172,11 +161,22 @@ def create_scene(gym, sim, props, wrist_asset_handle, table_asset_handles, cfg_s
                              cfg_s["wrist"]["pose"]["qy"],
                              cfg_s["wrist"]["pose"]["qz"],
                              cfg_s["wrist"]["pose"]["qw"])
-        wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", group=i, filter=0,
+        wrist_actor_handle = gym.create_actor(env_handle, wrist_asset_handle, pose, "wrist", group=env_idx, filter=0,
                                               segmentationId=cfg_s["wrist"]["segmentation_id"])
         wrist_actor_handles.append(wrist_actor_handle)
 
-    return env_handles, table_actor_handles, wrist_actor_handles
+        # Load all terrains associated with this environment.
+        for terrain_env_idx in range(terrains_per_env):
+            terrain_idx = terrain_env_idx * num_envs + env_idx
+            pose = gymapi.Transform()
+            pose.p = gymapi.Vec3(0.0, 0.0, 1.0)
+            pose.r = gymapi.Quat(0.0, 0.0, 0.0, 1.0)
+            terrain_actor_handle = gym.create_actor(env_handle, terrain_asset_handles[terrain_idx], pose,
+                                                    "terrain_%d" % terrain_idx, group=env_idx, filter=1,
+                                                    segmentationId=cfg_s["terrain"]["segmentation_id"])
+            terrain_actor_handles[env_idx].append(terrain_actor_handle)
+
+    return env_handles, terrain_actor_handles, wrist_actor_handles
 
 
 def create_sim(gym, gpu_id: int):
@@ -558,7 +558,7 @@ def close_sim(gym, sim, viewer, use_viewer):
     print("Done!")
 
 
-def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
+def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
                  z_offsets, out_folder=None, base_idx: int = 0, cfg_s=None):
     # Wrap particle
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
@@ -568,16 +568,25 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
     dt = gym.get_sim_params(sim).dt
     num_envs = len(envs)
     num_configs = len(configs)
-    num_rounds = int(np.ceil(float(num_configs) / float(num_envs)))
+    num_rounds = int(float(num_configs) // float(num_envs))
     z_height_provided = z_heights is not None
     num_particles_per_env = int(len(init_particle_state) / num_envs)
 
     if not z_height_provided:
         z_heights = [None] * num_configs
 
-    for range_idx in range(num_rounds):
-        round_configs = configs[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
-        round_goal_z_heights = z_heights[range_idx * num_envs: min((range_idx + 1) * num_envs, num_configs)]
+    for round_idx in range(num_rounds):
+        round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
+        round_goal_z_heights = z_heights[round_idx * num_envs: (round_idx + 1) * num_envs]
+
+        # Move terrain for this round into position.
+        for env_idx in range(num_envs):
+            env_handle = envs[env_idx]
+            terrain_handle = terrains[env_idx][round_idx]  # TODO: What do we do if repeating terrains?
+
+            state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
+            state["pose"]["p"]["z"][:] = 0.0
+            gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
 
         # Reset to new config.
         tool_state_init_ = copy.deepcopy(init_particle_state)
@@ -651,4 +660,13 @@ def run_sim_loop(gym, sim, envs, wrists, cameras, viewer, use_viewer, configs, z
         for result_idx, result_ in enumerate(results_):
             if out_folder is not None:
                 mmint_utils.save_gzip_pickle(result_, os.path.join(out_folder, "config_%d.pkl.gzip" % (
-                        base_idx + (range_idx * num_envs) + result_idx)))
+                        base_idx + (round_idx * num_envs) + result_idx)))
+
+        # Move terrain for this round into position.
+        for env_idx in range(num_envs):
+            env_handle = envs[env_idx]
+            terrain_handle = terrains[env_idx][round_idx]
+
+            state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
+            state["pose"]["p"]["z"][:] = 1.0
+            gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
