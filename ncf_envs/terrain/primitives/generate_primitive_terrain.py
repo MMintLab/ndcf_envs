@@ -1,3 +1,4 @@
+import copy
 import os
 import numpy as np
 import transforms3d.euler
@@ -88,6 +89,15 @@ def generate_ridge(ridge_cfg: dict, tool_width: float):
     return ridge_mesh, height
 
 
+def compute_offset_from_mesh(mesh: trimesh.Trimesh, tool_width):
+    vertices = copy.deepcopy(mesh.vertices)
+    mask_vertices = vertices[vertices[:, 0] < tool_width / 2.0 + 0.01]
+    mask_vertices = mask_vertices[mask_vertices[:, 0] > -tool_width / 2.0 - 0.01]
+    mask_vertices = mask_vertices[mask_vertices[:, 0] < tool_width / 2.0 + 0.01]
+    mask_vertices = mask_vertices[mask_vertices[:, 0] > -tool_width / 2.0 - 0.01]
+    return max(mask_vertices[:, 2])
+
+
 def generate_primitive_terrain(terrain_cfg: dict, idx: int, out_dir: str = None, vis=False):
     assets_dir = "assets"
     primitives_mesh_dir = "meshes/primitives/"
@@ -109,6 +119,9 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, out_dir: str = None,
         mesh, offset = generate_ridge(terrain_cfg, tool_width)
     else:
         raise Exception("Unknown terrain type: %s" % terrain_type)
+
+    # Compute offset from the generated mesh.
+    offset = compute_offset_from_mesh(mesh, tool_width)
 
     if vis:
         mesh.show()

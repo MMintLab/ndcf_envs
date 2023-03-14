@@ -11,6 +11,7 @@ import transforms3d as tf3d
 import torch
 
 import mmint_utils
+from tqdm import tqdm
 
 import ncf_envs.utils.utils as utils
 import ncf_envs.utils.real_utils as real_utils
@@ -468,6 +469,14 @@ def gym_transform_to_array(transform):
         [transform.p.x, transform.p.y, transform.p.z, transform.r.w, transform.r.x, transform.r.y, transform.r.z])
 
 
+def sim_stable(gym, sim, particle_state_tensor):
+    nodal_coords = get_nodal_coords(gym, sim, particle_state_tensor)
+    unstable = nodal_coords[:, :, 2].min() < -0.1 or nodal_coords[:, :, 2].max() > 1.0
+    unstable = unstable or nodal_coords[:, :, 0].min() < -0.06 or nodal_coords[:, :, 0].max() > 0.06
+    unstable = unstable or nodal_coords[:, :, 1].min() < -0.06 or nodal_coords[:, :, 1].max() > 0.06
+    return not unstable
+
+
 def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, render_cameras=False):
     # Render cameras.
     if render_cameras:
@@ -575,98 +584,112 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
     if not z_height_provided:
         z_heights = [None] * num_configs
 
-    for round_idx in range(num_rounds):
-        round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
-        round_goal_z_heights = z_heights[round_idx * num_envs: (round_idx + 1) * num_envs]
+    round_idx = 0
+    with tqdm(total=num_rounds) as pbar:
+        while round_idx < num_rounds:
+            pbar.update(1)
+            round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
+            round_goal_z_heights = z_heights[round_idx * num_envs: (round_idx + 1) * num_envs]
+            round_z_offsets = z_offsets[round_idx * num_envs: (round_idx + 1) * num_envs]
 
-        # Move terrain for this round into position.
-        for env_idx in range(num_envs):
-            env_handle = envs[env_idx]
-            terrain_handle = terrains[env_idx][round_idx]  # TODO: What do we do if repeating terrains?
+            # Move terrain for this round into position.
+            for env_idx in range(num_envs):
+                env_handle = envs[env_idx]
+                terrain_handle = terrains[env_idx][round_idx]  # TODO: What do we do if repeating terrains?
 
-            state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
-            state["pose"]["p"]["z"][:] = 0.0
-            gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
+                state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
+                state["pose"]["p"]["z"][:] = 0.0
+                gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
 
-        # Reset to new config.
-        tool_state_init_ = copy.deepcopy(init_particle_state)
-        tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
-        start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, z_offsets)
+            # Reset to new config.
+            tool_state_init_ = copy.deepcopy(init_particle_state)
+            tool_state_init_ = tool_state_init_.reshape(num_envs, -1, tool_state_init_.shape[-1])
+            start_zs = reset_wrist_offset(gym, sim, envs, wrists, tool_state_init_, round_configs, round_z_offsets)
 
-        if not z_height_provided:
-            for idx, start_z in enumerate(start_zs):
-                round_goal_z_heights[idx] = 0.0
+            if not z_height_provided:
+                for idx, start_z in enumerate(start_zs):
+                    round_goal_z_heights[idx] = 0.0
 
-        # Lower until each environment reaches the desired height.
-        t = 0
-        contact_flag = [False] * num_envs
-        while True:
-            t += 1
+            # Lower until each environment reaches the desired height.
+            t = 0
+            contact_flag = [False] * num_envs
+            success = True
+            while True:
+                t += 1
 
-            if t > 2000:
-                break
+                if t > 2000 or not sim_stable(gym, sim, particle_state_tensor):
+                    success = False
+                    break
 
-            # Step simulator.
-            gym.simulate(sim)
-            gym.fetch_results(sim, True)
+                # Step simulator.
+                gym.simulate(sim)
+                gym.fetch_results(sim, True)
 
-            # Visualize motion and deformation
-            if use_viewer:
-                gym.step_graphics(sim)
-                gym.draw_viewer(viewer, sim, True)
-                gym.clear_lines(viewer)
+                # Visualize motion and deformation
+                if use_viewer:
+                    gym.step_graphics(sim)
+                    gym.draw_viewer(viewer, sim, True)
+                    gym.clear_lines(viewer)
 
-            # Set goal motions for each wrist.
-            complete = True
-            contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]),
-                                                       num_particles_per_env)
-            for env_idx, (env, wrist, start_z, goal_z) in enumerate(zip(envs, wrists, start_zs, round_goal_z_heights)):
-                # Get current wrist pose.
-                curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
-                curr_z = curr_pos[2]
+                # Set goal motions for each wrist.
+                complete = True
+                contact_points, _, _, _ = get_contact_info(gym, sim, gym.get_env_rigid_body_count(envs[0]),
+                                                           num_particles_per_env)
+                for env_idx, (env, wrist, start_z, goal_z) in enumerate(
+                        zip(envs, wrists, start_zs, round_goal_z_heights)):
+                    # Get current wrist pose.
+                    curr_pos, curr_vel = get_wrist_dof_info(gym, env, wrist)
+                    curr_z = curr_pos[2]
 
-                # If we've reached our lowering goal, exit.
-                if abs(curr_z - goal_z) > 0.001:
-                    complete = False
-
-                # Set new desired pose.
-                des_z = start_z + (lowering_speed * dt * t)
-                curr_pos[2] = max(des_z, goal_z)
-                gym.set_actor_dof_position_targets(env, wrist, curr_pos)
-
-                # Detect contact and set goal, if no final z height provided.
-                if len(contact_points[env_idx]) > 0 and not contact_flag[env_idx] and not z_height_provided:
-                    contact_flag[env_idx] = True
+                    # If we've reached our lowering goal, exit.
+                    if abs(curr_z - goal_z) > 0.001:
+                        complete = False
 
                     # Set new desired pose.
-                    press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
-                    round_goal_z_heights[env_idx] = curr_z - press_distance
+                    des_z = start_z + (lowering_speed * dt * t)
+                    curr_pos[2] = max(des_z, goal_z)
+                    gym.set_actor_dof_position_targets(env, wrist, curr_pos)
 
-            if complete:
-                break
+                    # Detect contact and set goal, if no final z height provided.
+                    if len(contact_points[env_idx]) > 0 and not contact_flag[env_idx] and not z_height_provided:
+                        contact_flag[env_idx] = True
 
-        # Let simulation settle a bit.
-        for _ in range(10):
-            # Step simulator.
-            gym.simulate(sim)
-            gym.fetch_results(sim, True)
-            if use_viewer:
-                gym.step_graphics(sim)
-                gym.draw_viewer(viewer, sim, True)
-                gym.clear_lines(viewer)
+                        # Set new desired pose.
+                        press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
+                        round_goal_z_heights[env_idx] = curr_z - press_distance
 
-        # Get results.
-        results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, len(cameras) > 0)
-        for result_idx, result_ in enumerate(results_):
-            if out_folder is not None:
-                mmint_utils.save_gzip_pickle(result_, os.path.join(out_folder, "config_%d.pkl.gzip" % (
-                        base_idx + (round_idx * num_envs) + result_idx)))
+                if complete:
+                    break
 
-        # Move terrain for this round into position.
-        for env_idx in range(num_envs):
-            env_handle = envs[env_idx]
-            terrain_handle = terrains[env_idx][round_idx]
+            if success:
+                # Let simulation settle a bit.
+                for _ in range(10):
+                    # Step simulator.
+                    gym.simulate(sim)
+                    gym.fetch_results(sim, True)
+                    if use_viewer:
+                        gym.step_graphics(sim)
+                        gym.draw_viewer(viewer, sim, True)
+                        gym.clear_lines(viewer)
 
-            state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
-            state["pose"]["p"]["z"][:] = 1.0
-            gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
+                # Get results.
+                results_ = get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, len(cameras) > 0)
+                for result_idx, result_ in enumerate(results_):
+                    if out_folder is not None:
+                        mmint_utils.save_gzip_pickle(result_, os.path.join(out_folder, "config_%d.pkl.gzip" % (
+                                base_idx + (round_idx * num_envs) + result_idx)))
+            else:
+                print("Encountered failure.")
+
+            # Move terrain for this round into position.
+            for env_idx in range(num_envs):
+                env_handle = envs[env_idx]
+                terrain_handle = terrains[env_idx][round_idx]
+
+                state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
+                state["pose"]["p"]["z"][:] = 1.0
+                gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
+
+            # Bump to next round, if we succeeded.
+            if success:
+                round_idx += 1

@@ -48,7 +48,7 @@ def sample_sim_presses():
 
     # Run simulation with sampled configurations.
     run_sim_loop(gym, sim, env_handles, wrist_actor_handles, terrain_actor_handles, [], viewer, use_viewer,
-                 configs, None, init_particle_state, terrain_offsets + 0.002, out)
+                 configs, None, init_particle_state, terrain_offsets + 0.005, out)
 
     gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)

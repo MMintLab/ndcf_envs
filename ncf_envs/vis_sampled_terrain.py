@@ -24,12 +24,13 @@ def vis_sampled_terrain():
     terrain_files, _, terrain_offsets = generate_primitive_terrains(terrain_cfg, num_envs)
 
     # Setup environment.
-    sim, env_handles, wrist_actor_handles, viewer, init_particle_state = \
+    sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state = \
         create_simulator(gym, num_envs, True, cfg_s, urdfs=['urdf/wrist'] + terrain_files)
 
     # Move to random init poses.
     num = 10 * num_envs
     configs = np.array([-0.3, -0.3, -0.3]) + (np.random.random([num, 3]) * np.array([0.6, 0.6, 0.6]))
+    # configs = np.zeros([num, 3])
 
     for idx in range(10):
         tool_state_init_ = copy.deepcopy(init_particle_state)
@@ -37,10 +38,15 @@ def vis_sampled_terrain():
         reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_,
                            configs[num_envs * idx:num_envs * (idx + 1)], terrain_offsets + 0.02)
 
+    # Wrap particle
+    particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
+    gym.refresh_particle_state_tensor(sim)
+
     # for _ in range(10000):
     while not gym.query_viewer_has_closed(viewer):
         gym.simulate(sim)
         gym.fetch_results(sim, True)
+        print(sim_stable(gym, sim, particle_state_tensor))
         gym.step_graphics(sim)
         gym.draw_viewer(viewer, sim, True)
 
