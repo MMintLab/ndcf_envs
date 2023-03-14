@@ -29,7 +29,8 @@ def sample_sim_presses(args):
         mmint_utils.make_dir(out)
 
     # Generate terrain.
-    terrain_files, terrain_meshes, terrain_offsets = generate_primitive_terrains(terrain_cfg, num, out_dir=out)
+    terrain_files, terrain_meshes, terrain_offsets = generate_primitive_terrains(terrain_cfg, num, out_dir=out,
+                                                                                 offset_idx=args.offset)
 
     # Setup environment.
     sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state = \
