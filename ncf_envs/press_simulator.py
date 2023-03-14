@@ -587,7 +587,6 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
     round_idx = 0
     with tqdm(total=num_rounds) as pbar:
         while round_idx < num_rounds:
-            pbar.update(1)
             round_configs = configs[round_idx * num_envs: (round_idx + 1) * num_envs]
             round_goal_z_heights = z_heights[round_idx * num_envs: (round_idx + 1) * num_envs]
             round_z_offsets = z_offsets[round_idx * num_envs: (round_idx + 1) * num_envs]
@@ -617,7 +616,7 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
             while True:
                 t += 1
 
-                if t > 2000 or not sim_stable(gym, sim, particle_state_tensor):
+                if t > 300 or not sim_stable(gym, sim, particle_state_tensor):
                     success = False
                     break
 
@@ -680,6 +679,7 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
                                 base_idx + (round_idx * num_envs) + result_idx)))
             else:
                 print("Encountered failure.")
+                exit()
 
             # Move terrain for this round into position.
             for env_idx in range(num_envs):
@@ -693,3 +693,4 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
             # Bump to next round, if we succeeded.
             if success:
                 round_idx += 1
+                pbar.update(1)

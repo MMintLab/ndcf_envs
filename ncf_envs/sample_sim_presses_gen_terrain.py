@@ -7,18 +7,7 @@ from press_simulator import *
 import mmint_utils
 
 
-def sample_sim_presses():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("terrain_cfg", type=str, help="Terrain configuration file.")
-    parser.add_argument('--cuda_id', type=int, default=0, help="Cuda device id to use.")
-    parser.add_argument("--out", "-o", type=str, help="Directory to store results")
-    parser.add_argument("--num", "-n", type=int, default=100, help="Number of presses to simulate.")
-    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
-    parser.add_argument("--num_envs", "-e", type=int, default=4,
-                        help="Number of environments to simultaneously simulate.")
-    parser.add_argument("--cfg_s", type=str, default="cfg/scene.yaml",
-                        help="path to scene config yaml file")
-    args = parser.parse_args()
+def sample_sim_presses(args):
     use_viewer = args.viewer
     num_envs = args.num_envs
     num = args.num
@@ -48,11 +37,23 @@ def sample_sim_presses():
 
     # Run simulation with sampled configurations.
     run_sim_loop(gym, sim, env_handles, wrist_actor_handles, terrain_actor_handles, [], viewer, use_viewer,
-                 configs, None, init_particle_state, terrain_offsets + 0.005, out)
+                 configs, None, init_particle_state, terrain_offsets + 0.005, out, args.offset)
 
     gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)
 
 
 if __name__ == '__main__':
-    sample_sim_presses()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("terrain_cfg", type=str, help="Terrain configuration file.")
+    parser.add_argument('--cuda_id', type=int, default=0, help="Cuda device id to use.")
+    parser.add_argument("--out", "-o", type=str, help="Directory to store results")
+    parser.add_argument("--num", "-n", type=int, default=100, help="Number of presses to simulate.")
+    parser.add_argument("--offset", type=int, default=0, help="Offset on the outputs to write.")
+    parser.add_argument("--viewer", "-v", dest='viewer', action='store_true', help="Use viewer.")
+    parser.add_argument("--num_envs", "-e", type=int, default=4,
+                        help="Number of environments to simultaneously simulate.")
+    parser.add_argument("--cfg_s", type=str, default="cfg/scene.yaml",
+                        help="path to scene config yaml file")
+    args = parser.parse_args()
+    sample_sim_presses(args)
