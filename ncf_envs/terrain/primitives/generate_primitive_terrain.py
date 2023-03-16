@@ -56,7 +56,11 @@ def generate_curved_surface(cylinder_cfg: dict, tool_width: float):
     transform_[:2, 3] += xy_translation
 
     curve_mesh.apply_transform(transform_)
-    return curve_mesh, r - y + 0.01
+
+    # Compute offset from the generated mesh.
+    offset = compute_offset_from_mesh(curve_mesh, tool_width)
+
+    return curve_mesh, offset
 
 
 def generate_ridge(ridge_cfg: dict, tool_width: float):
@@ -119,9 +123,6 @@ def generate_primitive_terrain(terrain_cfg: dict, idx: int, out_dir: str = None,
         mesh, offset = generate_ridge(terrain_cfg, tool_width)
     else:
         raise Exception("Unknown terrain type: %s" % terrain_type)
-
-    # Compute offset from the generated mesh.
-    offset = compute_offset_from_mesh(mesh, tool_width)
 
     if vis:
         mesh.show()
