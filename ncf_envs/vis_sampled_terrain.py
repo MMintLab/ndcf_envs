@@ -38,15 +38,23 @@ def vis_sampled_terrain():
         reset_wrist_offset(gym, sim, env_handles, wrist_actor_handles, tool_state_init_,
                            configs[num_envs * idx:num_envs * (idx + 1)], terrain_offsets + 0.02)
 
+    # Move terrain into position.
+    for env_idx in range(num_envs):
+        env_handle = env_handles[env_idx]
+        terrain_handle = terrain_actor_handles[env_idx][0]
+
+        state = gym.get_actor_rigid_body_states(env_handle, terrain_handle, gymapi.STATE_POS)
+        state["pose"]["p"]["z"][:] = 0.0
+        gym.set_actor_rigid_body_states(env_handle, terrain_handle, state, gymapi.STATE_POS)
+
     # Wrap particle
     particle_state_tensor = gymtorch.wrap_tensor(gym.acquire_particle_state_tensor(sim))
     gym.refresh_particle_state_tensor(sim)
 
     # for _ in range(10000):
     while not gym.query_viewer_has_closed(viewer):
-        gym.simulate(sim)
-        gym.fetch_results(sim, True)
-        print(sim_stable(gym, sim, particle_state_tensor))
+        # gym.simulate(sim)
+        # gym.fetch_results(sim, True)
         gym.step_graphics(sim)
         gym.draw_viewer(viewer, sim, True)
 

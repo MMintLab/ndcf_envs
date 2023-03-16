@@ -64,32 +64,37 @@ def generate_curved_surface(cylinder_cfg: dict, tool_width: float):
 
 
 def generate_ridge(ridge_cfg: dict, tool_width: float):
-    # TODO: Update to using semi-circle alg?
-    length = 2 * tool_width
     ridge_width = 0.005 + (np.random.random() * 0.005)
-    num_points = 100
     height = 0.03
+    num_points = 100
+    y = np.random.random() * 0.1
+    l_ = tool_width + 0.01 + np.random.random() * 0.02
+    r = np.sqrt(l_ ** 2 + y ** 2)
+    theta_0 = np.arctan2(y, l_)
 
-    x = np.arange(-tool_width, tool_width + 1e-6, length / num_points)
-    if np.random.random() < 0.5:
-        amplitude = 0.0
-        y = [0.0] * num_points
+    flat = np.random.random() < 0.5
+    if flat:
+        curve_points = np.array([
+            [r * np.cos(theta), r * np.sin(theta) - y] for theta in
+            np.linspace(theta_0, np.pi - theta_0, num=num_points)
+        ])
     else:
-        amplitude = 0.0 + (np.random.random() * 0.06)
-        coords = (x + tool_width) / length
-        y = np.sin(coords * np.pi) * amplitude
+        x = np.arange(-tool_width, tool_width + 1e-6, 2 * tool_width / num_points)
+        curve_points = np.array([[x[i], 0.0] for i in range(len(x))])
 
     polygon_points = []
     for idx in range(num_points):
-        polygon_points.append([x[idx], y[idx] + (ridge_width / 2.0)])
+        polygon_points.append([curve_points[idx][0], curve_points[idx][1] + (ridge_width / 2.0)])
     for idx in range(num_points):
-        polygon_points.append([x[num_points - 1 - idx], y[num_points - 1 - idx] - (ridge_width / 2.0)])
-
+        polygon_points.append(
+            [curve_points[num_points - 1 - idx][0], curve_points[num_points - 1 - idx][1] - (ridge_width / 2.0)])
     ridge_polygon = shapely.Polygon(polygon_points)
 
     ridge_mesh = trimesh.creation.extrude_polygon(ridge_polygon, height)
 
-    ridge_mesh.apply_translation([0.0, -amplitude + ((-tool_width / 2.0) + (np.random.random() * tool_width)), 0.0])
+    ridge_mesh.apply_translation([0.0, ((-tool_width / 2.0) + (np.random.random() * tool_width)), 0.0])
+    if flat:
+        ridge_mesh.apply_translation([0.0, - (r - y), 0.0])
     return ridge_mesh, height
 
 
