@@ -296,7 +296,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
     mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
     o3d.io.write_triangle_mesh(os.path.join(out_dir, example_name + "_mesh.obj"), tri_mesh)
 
-    if vis:
+    if vis and False:
         vis_example_data(dataset_dict)
 
 
@@ -306,6 +306,7 @@ if __name__ == '__main__':
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
     parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
+    parser.add_argument("--offset", type=int, default=0, help="Offset to start from.")
     parser.set_defaults(vis=False)
     args = parser.parse_args()
 
@@ -317,10 +318,10 @@ if __name__ == '__main__':
     data_fns = [f for f in os.listdir(data_dir_) if "config_" in f]
     data_fns.sort(key=lambda a: int(a.replace(".pkl.gzip", "").split("_")[-1]))
 
-    for data_idx in trange(len(data_fns)):
+    for data_idx in trange(args.offset, len(data_fns)):
         data_fn = os.path.join(data_dir_, data_fns[data_idx])
         example_name_ = "out_%d" % data_idx
-        terrain_file_ = os.path.join(data_dir_, "mesh_%d.obj" % data_idx)
+        terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
 
         process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir_, example_name_, out_dir=args.out,
                                  terrain_file=terrain_file_, vis=args.vis)
