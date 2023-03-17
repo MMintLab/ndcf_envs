@@ -91,8 +91,8 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
     return np.array(points)
 
 
-def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_name, out_dir: str = None,
-                             terrain_file: str = None, vis=False):
+def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_dir, example_name, out_dir: str = None,
+                             vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -120,9 +120,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, data_dir, example_n
                                          o3d.utility.Vector3iVector(tri_triangles))
 
     # Load terrain file.
-    if terrain_file is not None:
-        terrain_mesh: trimesh.Trimesh = trimesh.load(terrain_file)
-        terrain_mesh.apply_transform(wrist_pose_T_w)
+    terrain_mesh: trimesh.Trimesh = trimesh.load(terrain_file)
+    terrain_mesh.apply_transform(wrist_pose_T_w)
 
     # Load contact point cloud.
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
@@ -323,5 +322,5 @@ if __name__ == '__main__':
         example_name_ = "out_%d" % data_idx
         terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
 
-        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir_, example_name_, out_dir=args.out,
-                                 terrain_file=terrain_file_, vis=args.vis)
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
+                                 out_dir=args.out, vis=args.vis)
