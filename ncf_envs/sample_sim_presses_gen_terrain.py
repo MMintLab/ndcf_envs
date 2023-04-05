@@ -33,11 +33,11 @@ def sample_sim_presses(args):
                                                                                  offset_idx=args.offset)
 
     # Setup environment.
-    sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state = \
+    sim, env_handles, wrist_actor_handles, terrain_actor_handles, camera_handles, viewer, init_particle_state = \
         create_simulator(gym, num_envs, use_viewer, cfg_s, urdfs=['urdf/wrist'] + terrain_files, cuda_id=cuda_id)
 
     # Run simulation with sampled configurations.
-    run_sim_loop(gym, sim, env_handles, wrist_actor_handles, terrain_actor_handles, [], viewer, use_viewer,
+    run_sim_loop(gym, sim, env_handles, wrist_actor_handles, terrain_actor_handles, camera_handles, viewer, use_viewer,
                  configs, None, init_particle_state, terrain_offsets + 0.005, out, args.offset)
 
     gym.destroy_viewer(viewer)

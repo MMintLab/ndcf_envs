@@ -92,7 +92,7 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
 
 
 def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_dir, example_name, out_dir: str = None,
-                             vis=False):
+                             camera_ids=None, vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -125,10 +125,15 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
 
     # Load contact point cloud.
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
+    if len(contact_points_w) == 0:
+        contact_points_w = np.empty((0, 3), dtype=np.float32)
     contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
 
     # Load all contact information.
     all_contacts = data_dict.get("all_contact", None)
+
+    if len(all_contacts) == 0:
+        return False
 
     if vis and False:
         for contact in all_contacts:
@@ -159,10 +164,14 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
 
     # Load contact forces.
     contact_forces_w = np.array(data_dict["contact_forces"])
+    if len(contact_forces_w) == 0:
+        contact_forces_w = np.empty((0, 3), dtype=np.float32)
     contact_forces = utils.transform_vectors(contact_forces_w, wrist_pose_T_w)
 
     # Load contact normals.
     contact_normals_w = np.array(data_dict["contact_normals"])
+    if len(contact_normals_w) == 0:
+        contact_normals_w = np.empty((0, 3), dtype=np.float32)
     contact_normals = utils.transform_vectors(contact_normals_w, wrist_pose_T_w)
 
     # Get SDF values near object.
@@ -217,7 +226,10 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
         env_origin = data_dict["env_origin"]
         partial_pc_data = []
         combined_pointcloud = []
-        for camera_out in camera_output:
+        camera_idcs = camera_ids if camera_ids is not None else range(len(camera_output))
+        # for camera_out in camera_output:
+        for camera_idx in camera_idcs:
+            camera_out = camera_output[camera_idx]
             rgb = camera_out["rgb"]
             depth = camera_out["depth"]
             segmentation = camera_out["segmentation"]
@@ -243,7 +255,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
                 "camera_pose": cam_wrist_pose,
             })
         combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-        if vis and False:
+        if vis:
             vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
     else:
         partial_pc_data = []
@@ -298,6 +310,8 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
     if vis and False:
         vis_example_data(dataset_dict)
 
+    return True
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process sim data.")
@@ -306,6 +320,7 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
     parser.add_argument("--offset", type=int, default=0, help="Offset to start from.")
+    parser.add_argument("--cameras", "-c", nargs="+", type=int, default=None, help="Camera indices to use.")
     parser.set_defaults(vis=False)
     args = parser.parse_args()
 
@@ -323,4 +338,4 @@ if __name__ == '__main__':
         terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
 
         process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
-                                 out_dir=args.out, vis=args.vis)
+                                 out_dir=args.out, camera_ids=args.cameras, vis=args.vis)

@@ -3,6 +3,8 @@ import os
 import pdb
 from collections import defaultdict
 
+from matplotlib import pyplot as plt
+
 from isaacgym import gymapi
 from isaacgym import gymtorch
 from isaacgym import gymutil
@@ -15,6 +17,7 @@ from tqdm import tqdm
 
 import ncf_envs.utils.utils as utils
 import ncf_envs.utils.real_utils as real_utils
+import ncf_envs.utils.lines_utils as lines_utils
 
 
 # Simulate pressing deformable tool into surface.
@@ -92,7 +95,7 @@ def create_simulator(gym, num_envs: int, use_viewer: bool = False, cfg_s: dict =
 
     # Create scene.
     scene_props = set_scene_props(num_envs, 0.2)
-    env_handles, terrain_actor_handles, wrist_actor_handles = \
+    env_handles, terrain_actor_handles, wrist_actor_handles, camera_handles = \
         create_scene(gym, sim, scene_props, wrist_asset_handle, table_asset_handles, cfg_s)
 
     # Setup wrist control properties.
@@ -107,7 +110,7 @@ def create_simulator(gym, num_envs: int, use_viewer: bool = False, cfg_s: dict =
     # Get initial config of particles.
     init_particle_state = get_init_particle_state(gym, sim)
 
-    return sim, env_handles, wrist_actor_handles, terrain_actor_handles, viewer, init_particle_state
+    return sim, env_handles, wrist_actor_handles, terrain_actor_handles, camera_handles, viewer, init_particle_state
 
 
 def set_scene_props(num_envs, env_dim=0.5):
@@ -148,6 +151,8 @@ def create_scene(gym, sim, props, wrist_asset_handle, terrain_asset_handles, cfg
     wrist_actor_handles = []
     terrain_actor_handles = [[]] * num_envs
     terrains_per_env = len(terrain_asset_handles) // num_envs
+    camera_handles = []
+    env_rigid_body_count = 0
     for env_idx in range(num_envs):
         # Create environment.
         env_handle = gym.create_env(sim, props['lower'], props['upper'], props['per_row'])
@@ -166,6 +171,34 @@ def create_scene(gym, sim, props, wrist_asset_handle, terrain_asset_handles, cfg
                                               segmentationId=cfg_s["wrist"]["segmentation_id"])
         wrist_actor_handles.append(wrist_actor_handle)
 
+        # Get the rigid body handle for the wrist of the "robot" in order to attach the camera to it.
+        wrist_rigid_body_handle_idx = gym.get_actor_rigid_body_dict(env_handle, wrist_actor_handle)["wrist"]
+
+        num_cameras = 8
+        env_camera_handles = []
+        if num_envs > 1:
+            raise Exception("Multiple environments not supported yet with cameras.")
+        for camera_idx in range(num_cameras):
+            radius = 0.1
+            theta = camera_idx * 2 * np.pi / num_cameras
+
+            # Add simulated cameras "around" the wrist.
+            camera_props = gymapi.CameraProperties()
+            camera_props.width = 512
+            camera_props.height = 512
+            camera_handle = gym.create_camera_sensor(env_handle, camera_props)
+
+            local_transform = gymapi.Transform()
+            local_transform.p = gymapi.Vec3(radius * np.cos(theta), radius * np.sin(theta), 0.0)
+            quat = tf3d.euler.euler2quat(np.pi, 3 * np.pi / 4, theta, axes='sxyz')
+            local_transform.r = gymapi.Quat(quat[1], quat[2], quat[3], quat[0])
+            gym.attach_camera_to_body(camera_handle, env_handle, env_rigid_body_count + wrist_rigid_body_handle_idx,
+                                      local_transform, gymapi.FOLLOW_POSITION)
+
+            env_camera_handles.append(camera_handle)
+
+        camera_handles.append(env_camera_handles)
+
         # Load all terrains associated with this environment.
         for terrain_env_idx in range(terrains_per_env):
             terrain_idx = terrain_env_idx * num_envs + env_idx
@@ -177,7 +210,9 @@ def create_scene(gym, sim, props, wrist_asset_handle, terrain_asset_handles, cfg
                                                     segmentationId=cfg_s["terrain"]["segmentation_id"])
             terrain_actor_handles[env_idx].append(terrain_actor_handle)
 
-    return env_handles, terrain_actor_handles, wrist_actor_handles
+        env_rigid_body_count += gym.get_env_rigid_body_count(env_handle)
+
+    return env_handles, terrain_actor_handles, wrist_actor_handles, camera_handles
 
 
 def create_sim(gym, gpu_id: int):
@@ -541,6 +576,12 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
                 camera_transform = gym.get_camera_transform(sim, env, camera)
                 camera_view_matrix = gym.get_camera_view_matrix(sim, env, camera)
 
+                # Use matplotlib subplots to visualize the rgb and depth images.
+                # fig, ax = plt.subplots(1, 2)
+                # ax[0].imshow(rgb_image)
+                # ax[1].imshow(depth_image)
+                # plt.show()
+
                 camera_output.append({
                     "rgb": rgb_image,
                     "depth": depth_image,
@@ -565,6 +606,25 @@ def close_sim(gym, sim, viewer, use_viewer):
         gym.destroy_viewer(viewer)
     gym.destroy_sim(sim)
     print("Done!")
+
+
+def visualize_poses(gym, sim, viewer, envs, wrists, cameras):
+    for env in envs:
+        lines_utils.draw_origin(gym, viewer, env, scale=0.1)
+
+    for env, wrist in zip(envs, wrists):
+        pose, _ = get_wrist_dof_info(gym, env, wrist)
+        lines_utils.draw_pose(gym, viewer, env, pose=pose, scale=0.1)
+
+    for env, env_cameras in zip(envs, cameras):
+        for camera in env_cameras:
+            camera_view_matrix = gym.get_camera_view_matrix(sim, env, camera)
+            c_T_w = camera_view_matrix.T
+            if not camera_view_matrix.any():
+                continue
+            w_T_c = np.linalg.inv(c_T_w)
+
+            lines_utils.draw_pose(gym, viewer, env, matrix=w_T_c, scale=0.1)
 
 
 def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, configs, z_heights, init_particle_state,
@@ -626,6 +686,9 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
 
                 # Visualize motion and deformation
                 if use_viewer:
+                    # Visualize some useful poses.
+                    visualize_poses(gym, sim, viewer, envs, wrists, cameras)
+
                     gym.step_graphics(sim)
                     gym.draw_viewer(viewer, sim, True)
                     gym.clear_lines(viewer)
