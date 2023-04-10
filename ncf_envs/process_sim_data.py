@@ -255,7 +255,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
                 "camera_pose": cam_wrist_pose,
             })
         combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-        if vis:
+        if vis and False:
             vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
     else:
         partial_pc_data = []

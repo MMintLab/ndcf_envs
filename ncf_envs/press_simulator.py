@@ -687,7 +687,7 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
                 # Visualize motion and deformation
                 if use_viewer:
                     # Visualize some useful poses.
-                    visualize_poses(gym, sim, viewer, envs, wrists, cameras)
+                    # visualize_poses(gym, sim, viewer, envs, wrists, cameras)
 
                     gym.step_graphics(sim)
                     gym.draw_viewer(viewer, sim, True)
@@ -726,6 +726,7 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
             if success:
                 # Let simulation settle a bit.
                 for _ in range(10):
+
                     # Step simulator.
                     gym.simulate(sim)
                     gym.fetch_results(sim, True)
