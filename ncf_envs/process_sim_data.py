@@ -47,16 +47,16 @@ def vis_images(rgb, depth, segmentation):
 
 
 def vis_partial_pc(gt_mesh, partial_pc_data, combined_pc):
-    # vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
-    vedo_plt = Plotter(shape=(1, 1))
+    vedo_plt = Plotter(shape=(1, 1 + len(partial_pc_data)))
+    # vedo_plt = Plotter(shape=(1, 1))
     vedo_mesh = Mesh([gt_mesh.vertices, gt_mesh.triangles])
     poses_vis = []
-    # for idx in range(len(partial_pc_data)):
-    #     pc_data = partial_pc_data[idx]
-    #     pc_vedo = Points(pc_data["pointcloud"])
-    #     pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
-    #     poses_vis.append(pose_vis)
-    #     vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
+    for idx in range(len(partial_pc_data)):
+        pc_data = partial_pc_data[idx]
+        pc_vedo = Points(pc_data["pointcloud"])
+        pose_vis = vedo_utils.draw_pose(pc_data["camera_pose"])
+        poses_vis.append(pose_vis)
+        vedo_plt.at(idx + 1).show(vedo_utils.draw_origin(), vedo_mesh, pc_vedo, pose_vis)
     vedo_plt.at(0).show(vedo_utils.draw_origin(), vedo_mesh, Points(combined_pc), *poses_vis)
     vedo_plt.interactive().close()
 
@@ -92,7 +92,7 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
 
 
 def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_dir, example_name, out_dir: str = None,
-                             camera_ids=None, vis=False):
+                             vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -226,9 +226,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
         env_origin = data_dict["env_origin"]
         partial_pc_data = []
         combined_pointcloud = []
-        camera_idcs = camera_ids if camera_ids is not None else range(len(camera_output))
-        # for camera_out in camera_output:
-        for camera_idx in camera_idcs:
+        for camera_idx in range(len(camera_output)):
             camera_out = camera_output[camera_idx]
             rgb = camera_out["rgb"]
             depth = camera_out["depth"]
@@ -255,7 +253,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
                 "camera_pose": cam_wrist_pose,
             })
         combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-        if vis and False:
+        if vis:
             vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
     else:
         partial_pc_data = []
@@ -320,7 +318,6 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
     parser.add_argument("--offset", type=int, default=0, help="Offset to start from.")
-    parser.add_argument("--cameras", "-c", nargs="+", type=int, default=None, help="Camera indices to use.")
     parser.set_defaults(vis=False)
     args = parser.parse_args()
 
@@ -338,4 +335,4 @@ if __name__ == '__main__':
         terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
 
         process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
-                                 out_dir=args.out, camera_ids=args.cameras, vis=args.vis)
+                                 out_dir=args.out, vis=args.vis)
