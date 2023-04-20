@@ -239,6 +239,9 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
             pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation,
                                                env_origin)
 
+            if len(pointcloud) == 0:
+                continue
+
             # Get camera pose w.r.t. wrist.
             c_T_w = camera_view_matrix.T
             w_T_c = np.linalg.inv(c_T_w)
