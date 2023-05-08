@@ -1,11 +1,12 @@
 import os
+from multiprocessing import Pool
 
 import mmint_utils
 import argparse
 import numpy as np
 import open3d as o3d
 import trimesh
-from tqdm import trange
+from tqdm import trange, tqdm
 from vedo import Plotter, Points, Arrows, Mesh, Point, Line, Arrow
 from ncf_envs.utils import vedo_utils, utils
 import matplotlib.pyplot as plt
@@ -239,24 +240,27 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
             pointcloud = deproject_depth_image(depth, projection_matrix, camera_view_matrix, tool_segmentation,
                                                env_origin)
 
-            if len(pointcloud) == 0:
-                continue
-
             # Get camera pose w.r.t. wrist.
             c_T_w = camera_view_matrix.T
             w_T_c = np.linalg.inv(c_T_w)
             wrist_pose_T_c = wrist_pose_T_w @ w_T_c
             cam_wrist_pose = utils.matrix_to_pose(wrist_pose_T_c)
 
-            pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
+            if len(pointcloud) == 0:
+                partial_pc_data.append({
+                    "pointcloud": None,
+                    "camera_pose": cam_wrist_pose,
+                })
+                continue
 
+            pointcloud = utils.transform_pointcloud(pointcloud, wrist_pose_T_w)
             combined_pointcloud.append(pointcloud)
             partial_pc_data.append({
                 "pointcloud": pointcloud,
                 "camera_pose": cam_wrist_pose,
             })
         combined_pointcloud = np.concatenate(combined_pointcloud, axis=0)
-        if vis:
+        if vis and False:
             vis_partial_pc(tri_mesh, partial_pc_data, combined_pointcloud)
     else:
         partial_pc_data = []
@@ -332,10 +336,26 @@ if __name__ == '__main__':
     data_fns = [f for f in os.listdir(data_dir_) if "config_" in f]
     data_fns.sort(key=lambda a: int(a.replace(".pkl.gzip", "").split("_")[-1]))
 
-    for data_idx in trange(args.offset, len(data_fns)):
-        data_fn = os.path.join(data_dir_, data_fns[data_idx])
-        example_name_ = "out_%d" % data_idx
-        terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
+
+    # for data_idx in trange(args.offset, len(data_fns)):
+    #     data_fn = os.path.join(data_dir_, data_fns[data_idx])
+    #     example_name_ = "out_%d" % data_idx
+    #     terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
+    #
+    #     process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
+    #                              out_dir=args.out, vis=args.vis)
+
+    def idx_to_run(idx):
+        data_fn = os.path.join(data_dir_, data_fns[idx])
+        example_name_ = "out_%d" % idx
+        terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % idx)
 
         process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
                                  out_dir=args.out, vis=args.vis)
+
+
+    # Parallelize.
+    with Pool(32) as p:
+        for _ in tqdm(p.imap_unordered(idx_to_run, range(args.offset, len(data_fns))),
+                      total=len(data_fns) - args.offset):
+            pass
