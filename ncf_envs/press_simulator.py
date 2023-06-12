@@ -576,12 +576,6 @@ def get_results(gym, sim, envs, wrists, cameras, viewer, particle_state_tensor, 
                 camera_transform = gym.get_camera_transform(sim, env, camera)
                 camera_view_matrix = gym.get_camera_view_matrix(sim, env, camera)
 
-                # Use matplotlib subplots to visualize the rgb and depth images.
-                # fig, ax = plt.subplots(1, 2)
-                # ax[0].imshow(rgb_image)
-                # ax[1].imshow(depth_image)
-                # plt.show()
-
                 camera_output.append({
                     "rgb": rgb_image,
                     "depth": depth_image,
@@ -717,8 +711,7 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
                         contact_flag[env_idx] = True
 
                         # Set new desired pose.
-                        # press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
-                        press_distance = 0.01
+                        press_distance = 0.005 + (np.random.random() * (0.01 - 0.005))
                         round_goal_z_heights[env_idx] = curr_z - press_distance
 
                 if complete:
