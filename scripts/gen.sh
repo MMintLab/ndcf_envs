@@ -14,6 +14,18 @@
 #python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_val/ -n 100 -e 1
 #python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_val/ -n 100 -e 1
 
-python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/ridge.yaml -o out/primitives/camera_ready/ridge_val_v2/ -n 200 -e 1
-python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_val_v2/ -n 200 -e 1
-python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_val_v2/ -n 200 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/ridge.yaml -o out/primitives/camera_ready/ridge_val_v2/ -n 200 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_val_v2/ -n 200 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_val_v2/ -n 200 -e 1
+
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/ridge.yaml -o out/primitives/camera_ready/ridge_test/ -n 200 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_test/ -n 200 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_test/ -n 200 -e 1
+
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/ridge.yaml -o out/primitives/camera_ready/ridge_test_v2/ -n 100 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_test_v2/ -n 100 -e 1
+#python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_test_v2/ -n 100 -e 1
+
+python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/ridge.yaml -o out/primitives/camera_ready/ridge_val_v3/ -n 30 -e 1
+python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/box.yaml -o out/primitives/camera_ready/box_val_v3/ -n 30 -e 1
+python ncf_envs/sample_sim_presses_gen_terrain_proc.py cfg/primitives/curve.yaml -o out/primitives/camera_ready/curve_val_v3/ -n 30 -e 1

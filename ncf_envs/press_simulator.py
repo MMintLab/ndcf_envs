@@ -717,7 +717,8 @@ def run_sim_loop(gym, sim, envs, wrists, terrains, cameras, viewer, use_viewer, 
                         contact_flag[env_idx] = True
 
                         # Set new desired pose.
-                        press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
+                        # press_distance = 0.003 + (np.random.random() * (0.01 - 0.003))
+                        press_distance = 0.01
                         round_goal_z_heights[env_idx] = curr_z - press_distance
 
                 if complete:

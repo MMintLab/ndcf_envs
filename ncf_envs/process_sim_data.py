@@ -188,6 +188,9 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
     surface_points, surface_normals, surface_contact_labels, contact_patch = \
         utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
 
+    if contact_area == 0:
+        print("No contact area. Example: %s" % example_name)
+
     # Calculate pressure (approx) for interaction.
     wrist_f = data_dict["wrist_wrench"][:3]
     wrist_f_norm = np.linalg.norm(wrist_f)
@@ -311,6 +314,9 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
 
     mmint_utils.save_gzip_pickle(dataset_dict, os.path.join(out_dir, example_name + ".pkl.gzip"))
     o3d.io.write_triangle_mesh(os.path.join(out_dir, example_name + "_mesh.obj"), tri_mesh)
+    mmint_utils.save_gzip_pickle({"contact_area": contact_area},
+                                 os.path.join(out_dir, example_name + "_contact_area.pkl.gzip"))
+
 
     if vis and False:
         vis_example_data(dataset_dict)
@@ -324,6 +330,7 @@ if __name__ == '__main__':
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
     parser.add_argument("-o", "--out", type=str, default=None, help="Optional out dir to write to instead of data dir.")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
+    parser.add_argument("-j", "--jobs", type=int, default=32, help="Number of jobs to run in parallel.")
     parser.add_argument("--offset", type=int, default=0, help="Offset to start from.")
     parser.set_defaults(vis=False)
     args = parser.parse_args()
@@ -355,7 +362,7 @@ if __name__ == '__main__':
 
 
     # Parallelize.
-    with Pool(32) as p:
+    with Pool(args.jobs) as p:
         for _ in tqdm(p.imap_unordered(idx_to_run, range(args.offset, len(data_fns))),
                       total=len(data_fns) - args.offset):
             pass
