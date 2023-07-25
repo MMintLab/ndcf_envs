@@ -194,11 +194,22 @@ def find_in_contact_triangles_indices(tri_mesh: o3d.geometry.TriangleMesh, parti
     contact_triangles = np.array(
         [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
 
+    # Contact edges.
+    contact_edges = []
+    for tri_idx, tri in enumerate(triangles):
+        for edge in [
+            [tri[0], tri[1]],
+            [tri[0], tri[2]],
+            [tri[1], tri[2]]
+        ]:
+            if contact_vertices[edge[0]] and contact_vertices[edge[1]]:
+                contact_edges.append((edge, tri_idx))
+
     # Find total area of contact patch.
     mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
     contact_area = contact_triangles.astype(float) @ mesh.area_faces
 
-    return contact_vertices, contact_triangles, contact_area
+    return contact_vertices, contact_triangles, contact_area, contact_edges
 
 
 def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_points: np.ndarray):
@@ -219,11 +230,22 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
     contact_triangles = np.array(
         [contact_vertices[tri[0]] and contact_vertices[tri[1]] and contact_vertices[tri[2]] for tri in triangles])
 
+    # Contact edges.
+    contact_edges = []
+    for tri_idx, tri in enumerate(triangles):
+        for edge in [
+            [tri[0], tri[1]],
+            [tri[0], tri[2]],
+            [tri[1], tri[2]]
+        ]:
+            if contact_vertices[edge[0]] and contact_vertices[edge[1]]:
+                contact_edges.append((edge, tri_idx))
+
     # Find total area of contact patch.
     mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
     contact_area = contact_triangles.astype(float) @ mesh.area_faces
 
-    return contact_vertices, contact_triangles, contact_area
+    return contact_vertices, contact_triangles, contact_area, contact_edges
 
 
 def sample_non_contact_surface_points(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
@@ -251,7 +273,7 @@ def sample_surface_points(tri_mesh: o3d.geometry.TriangleMesh, n: int = 1000):
 
 
 def sample_surface_points_with_contact(tri_mesh: o3d.geometry.TriangleMesh, contact_triangles: np.ndarray,
-                                       n: int = 1000):
+                                       contact_edges: np.ndarray, n: int = 1000, n_edges: int = 10000):
     surface_points, surface_normals, triangle_idcs = sample_surface_points(tri_mesh, n)
 
     # Determine contact labels based on whether the sampled points are on triangles labeled as in contact.
@@ -259,5 +281,25 @@ def sample_surface_points_with_contact(tri_mesh: o3d.geometry.TriangleMesh, cont
 
     # Pull out the contact path separately.
     contact_patch = surface_points[contact_labels]
+
+    # Sample points on the contact edges.
+    edge_contact_points = []
+    edge_normals = []
+    n_per_edge = int(n_edges / len(contact_edges))
+    mesh = trimesh.Trimesh(tri_mesh.vertices, tri_mesh.triangles)
+    mesh.fix_normals()
+    for edge_info in contact_edges:
+        edge, tri_idx = edge_info
+        for w in np.linspace(0.0, 1.0, n_per_edge):
+            edge_contact_points.append(w * tri_mesh.vertices[edge[0]] + (1 - w) * tri_mesh.vertices[edge[1]])
+            edge_normals.append(mesh.face_normals[tri_idx])
+
+    # Add contact points to surface points.
+    surface_points = np.concatenate([surface_points, edge_contact_points])
+    surface_normals = np.concatenate([surface_normals, edge_normals])
+    contact_labels = np.concatenate([contact_labels, np.ones(len(edge_contact_points))]).astype(np.int)
+
+    # Combine contact_patch and edge_contact_points
+    contact_patch = np.concatenate([contact_patch, edge_contact_points])
 
     return np.array(surface_points), np.array(surface_normals), contact_labels, np.array(contact_patch)

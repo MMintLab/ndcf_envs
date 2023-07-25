@@ -180,13 +180,13 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
 
     # Get samples on the surface of the object.
     if all_contacts is None:
-        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles(tri_mesh, contact_points)
+        contact_vertices, contact_triangles, contact_area, contact_edges = \
+            utils.find_in_contact_triangles(tri_mesh, contact_points)
     else:
-        contact_vertices, contact_triangles, contact_area = utils.find_in_contact_triangles_indices(
-            tri_mesh, all_contacts["particleIndices"], def_vert
-        )
+        contact_vertices, contact_triangles, contact_area, contact_edges = \
+            utils.find_in_contact_triangles_indices(tri_mesh, all_contacts["particleIndices"], def_vert)
     surface_points, surface_normals, surface_contact_labels, contact_patch = \
-        utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, n=20000)
+        utils.sample_surface_points_with_contact(tri_mesh, contact_triangles, contact_edges, n=20000, n_edges=2000)
 
     if contact_area == 0:
         print("No contact area. Example: %s" % example_name)
@@ -207,7 +207,9 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
         contact_normals_vedo = Arrows(contact_points, contact_points + 0.01 * contact_normals)
 
         new_points_vedo = Points(surface_points, c="b")
-        new_contact_points_vedo = Points(surface_points[surface_contact_labels], c="r")
+        contact_patch_vedo = Points(surface_points[np.nonzero(surface_contact_labels)], c="r")
+        contact_full_normals_vedo = Arrows(surface_points[:5000],
+                                           surface_points[:5000] + 0.01 * surface_normals[:5000])
 
         contact_vertices_data = def_vert[np.array([list(c) for c in all_contacts["particleIndices"]]).flatten()]
 
@@ -216,8 +218,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
                        Arrows(contact_points, contact_points + 0.01 * contact_forces),
                        Points(contact_vertices_data, c="purple"),
                        "Contact Points")
-        plt.at(1).show(new_points_vedo, new_contact_points_vedo,
-                       Arrows(contact_points, contact_points + 0.01 * contact_forces), "Contact Vertices")
+        plt.at(1).show(new_points_vedo, contact_patch_vedo, contact_full_normals_vedo, "Contact Vertices")
         plt.at(2).show(contact_points_vedo, tri_mesh_vedo_contact,
                        contact_normals_vedo, "Contact Normals")
         if terrain_file is not None:
@@ -317,7 +318,6 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, terrain_file, data_
     mmint_utils.save_gzip_pickle({"contact_area": contact_area},
                                  os.path.join(out_dir, example_name + "_contact_area.pkl.gzip"))
 
-
     if vis and False:
         vis_example_data(dataset_dict)
 
@@ -343,15 +343,6 @@ if __name__ == '__main__':
     data_fns = [f for f in os.listdir(data_dir_) if "config_" in f]
     data_fns.sort(key=lambda a: int(a.replace(".pkl.gzip", "").split("_")[-1]))
 
-
-    # for data_idx in trange(args.offset, len(data_fns)):
-    #     data_fn = os.path.join(data_dir_, data_fns[data_idx])
-    #     example_name_ = "out_%d" % data_idx
-    #     terrain_file_ = os.path.join(data_dir_, "terrain_%d.obj" % data_idx)
-    #
-    #     process_sim_data_example(data_fn, args.base_tetra_mesh_fn, terrain_file_, data_dir_, example_name_,
-    #                              out_dir=args.out, vis=args.vis)
-
     def idx_to_run(idx):
         data_fn = os.path.join(data_dir_, data_fns[idx])
         example_name_ = "out_%d" % idx
@@ -361,8 +352,11 @@ if __name__ == '__main__':
                                  out_dir=args.out, vis=args.vis)
 
 
-    # Parallelize.
-    with Pool(args.jobs) as p:
-        for _ in tqdm(p.imap_unordered(idx_to_run, range(args.offset, len(data_fns))),
-                      total=len(data_fns) - args.offset):
-            pass
+    if args.jobs == 1:
+        for idx in range(args.offset, len(data_fns)):
+            idx_to_run(idx)
+    else:
+        with Pool(args.jobs) as p:
+            for _ in tqdm(p.imap_unordered(idx_to_run, range(args.offset, len(data_fns))),
+                          total=len(data_fns) - args.offset):
+                pass
