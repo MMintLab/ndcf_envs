@@ -1,5 +1,7 @@
 <robot name="table">
-
+    <asset>
+        <material name="table_mat" specular="0" shininess="0.5" reflectance="0" rgba="0.93 0.93 0.93 1"></material>
+    </asset>
     <link name="world">
     </link>
 
@@ -16,13 +18,16 @@
         <visual>
             <origin xyz="0.0 0.0 -0.005"/>
             <geometry>
-                <box size="0.1 0.1 0.01"/>
+                <box size="1.0 1.0 0.01"/>
             </geometry>
+            <material name="aluminum">
+                <color rgba="0.5 0.5 0.5 1"/>
+             </material>
         </visual>
         <collision>
             <origin xyz="0.0 0.0 -0.005"/>
             <geometry>
-                <box size="0.1 0.1 0.01"/>
+                <box size="1.0 1.0 0.01"/>
             </geometry>
         </collision>
     </link>

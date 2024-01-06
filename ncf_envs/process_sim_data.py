@@ -4,8 +4,9 @@ import mmint_utils
 import argparse
 import numpy as np
 import open3d as o3d
+import trimesh
 from tqdm import trange
-from vedo import Plotter, Points, Arrows, Mesh
+from vedo import Plotter, Points, Arrows, Mesh, Point, Line, Arrow
 import utils
 import vedo_utils
 import matplotlib.pyplot as plt
@@ -90,7 +91,8 @@ def deproject_depth_image(depth, projection_matrix, view_matrix, tool_segmentati
     return np.array(points)
 
 
-def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, vis=False):
+def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_name, terrain_file: str = None,
+                             vis=False):
     data_dict = mmint_utils.load_gzip_pickle(example_fn)
 
     # Get wrist pose.
@@ -103,7 +105,7 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     def_vert_prime = utils.transform_pointcloud(def_vert_w, wrist_pose_T_w)
     def_vert = data_dict["nodal_coords_wrist"]
 
-    if vis:
+    if vis and False:
         plt = Plotter(shape=(1, 2))
         plt.at(0).show(Points(def_vert_prime), vedo_utils.draw_origin())
         plt.at(1).show(Points(def_vert), vedo_utils.draw_origin())
@@ -116,10 +118,56 @@ def process_sim_data_example(example_fn, base_tetra_mesh_fn, out_dir, example_na
     tri_vert, tri_triangles = utils.tetrahedral_to_surface_triangles(def_vert, tet_tetra)
     tri_mesh = o3d.geometry.TriangleMesh(o3d.utility.Vector3dVector(tri_vert),
                                          o3d.utility.Vector3iVector(tri_triangles))
+    trimesh_mesh = trimesh.Trimesh(vertices=tri_vert, faces=tri_triangles)
+
+    # Load terrain file.
+    terrain_mesh: trimesh.Trimesh = trimesh.load(terrain_file)
+    terrain_mesh.apply_transform(wrist_pose_T_w)
 
     # Load contact point cloud.
     contact_points_w = np.array([list(ctc_pt) for ctc_pt in data_dict["contact_points"]])
     contact_points = utils.transform_pointcloud(contact_points_w, wrist_pose_T_w)
+
+    # (closest_points, distances, triangle_id) = terrain_mesh.nearest.on_surface(contact_points)
+    # (closest_points_, distances_, triangle_id_) = trimesh_mesh.nearest.on_surface(contact_points)
+
+    # if vis:
+    #     plt = Plotter(shape=(1, 2))
+    #     plt.at(0).show(Points(def_vert), Points(contact_points, c="red"), vedo_utils.draw_origin())
+    #     plt.at(1).show(Points(terrain_mesh.vertices), Points(contact_points, c="red"), vedo_utils.draw_origin())
+    #     plt.interactive().close()
+
+    all_contacts = data_dict["all_contact"]
+    for contact in all_contacts:
+        contact_point = contact["bodyOffset"]
+        normal = contact["normal"]
+        normal = utils.transform_vectors(np.array([list(normal)]), wrist_pose_T_w)[0]
+        contact_point = utils.transform_pointcloud(np.array([list(contact_point)]), wrist_pose_T_w)[0]
+        particle_indices = np.array(list(contact["particleIndices"]))
+        particle_barys = np.array(list(contact["particleBarys"]))
+        contact_point_surface = (def_vert[particle_indices[0]] * particle_barys[0]) + (
+                def_vert[particle_indices[1]] * particle_barys[1]) + (
+                                        def_vert[particle_indices[2]] * particle_barys[2])
+
+        point_diff = contact_point - contact_point_surface
+        point_diff /= np.linalg.norm(point_diff)
+
+        plt = Plotter(shape=(1, 2))
+        plt.at(0).show(  # Points(def_vert, c="black"),
+            Mesh([tri_vert, tri_triangles]),
+            Point(contact_point, c="red"),
+            Point(contact_point_surface, c="purple"),
+            Line(def_vert[particle_indices], c="blue", closed=True),
+            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
+        )
+        plt.at(1).show(  # Points(terrain_mesh.vertices, c="black"),
+            Point(contact_point, c="red"),
+            Mesh([terrain_mesh.vertices, terrain_mesh.faces]),
+            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.01 * normal, c="red"),
+            # Arrow(start_pt=contact_point, end_pt=contact_point + 0.011 * point_diff, c="orange")
+        )
+        plt.interactive().close()
 
     # Load contact forces.
     contact_forces_w = np.array(data_dict["contact_forces"])
@@ -253,6 +301,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Process sim data.")
     parser.add_argument("data_dir", type=str, help="Data dir.")
     parser.add_argument("base_tetra_mesh_fn", type=str, help="Base Tet mesh file.")
+    parser.add_argument("-t", "--terrain", type=str, default=None, help="Terrain file used in interaction (if any).")
     parser.add_argument('-v', '--vis', dest='vis', action='store_true', help='Visualize.')
     parser.set_defaults(vis=False)
     args = parser.parse_args()
@@ -266,4 +315,5 @@ if __name__ == '__main__':
         data_fn = os.path.join(data_dir, data_fns[data_idx])
         example_name_ = "out_%d" % data_idx
 
-        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir, example_name_, vis=args.vis)
+        process_sim_data_example(data_fn, args.base_tetra_mesh_fn, data_dir, example_name_, terrain_file=args.terrain,
+                                 vis=args.vis)

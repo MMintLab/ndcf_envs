@@ -18,6 +18,11 @@ Setup processing conda environment with `proc_environment.yaml`.
 
 ## Running
 
+### Make object model
+```commandline
+python ncf_envs/generate_beam.py --width 0.07 --height 0.005 --length 0.2 --out_fn assets/meshes/beam/beam.tet
+```
+
 ### Running the simulation
 
 To collect a new dataset of simulated presses, use your simulation environment `python` to run the following:
@@ -38,3 +43,8 @@ python ncf_envs/process_sim_data.py <output directory used by simulator> <path t
 ```
 
 Default path for sponge is: `assets/meshes/sponge/sponge_2/sponge_2.tet`
+
+### Random Terrain Generation
+```angular2html
+python ncf_envs/sample_sim_presses_terrain.py -o output/ -n 8 -e 8 -v --cfg_s cfg/scene_terrain.yaml
+```

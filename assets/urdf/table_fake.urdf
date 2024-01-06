@@ -1,0 +1,14 @@
+<robot name="table">
+
+    <link name="world">
+    </link>
+
+    <joint name="world_to_table" type="fixed">
+        <parent link="world"/>
+        <child link="table"/>
+    </joint>
+
+    <link name="table">
+    </link>
+
+</robot>

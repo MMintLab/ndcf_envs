@@ -1,9 +1,11 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import transforms3d as tf3d
 import open3d as o3d
 from scipy.spatial import KDTree
 import trimesh
 import trimesh.sample
+# from vedo import Plotter, Points
 
 
 def pointcloud_to_o3d(pointcloud):
@@ -183,8 +185,19 @@ def find_in_contact_triangles(tri_mesh: o3d.geometry.TriangleMesh, contact_point
 
     # Determine the vertices in contact.
     kd_tree = KDTree(vertices)
-    _, contact_points_vert_idcs = kd_tree.query(contact_points)
+    d, contact_points_vert_idcs = kd_tree.query(contact_points)
     contact_vertices[contact_points_vert_idcs] = True
+
+    contact_kd_tree = KDTree(contact_points)
+    d_contact, vert_contact_points_idcs = contact_kd_tree.query(vertices)
+
+    plt = Plotter()
+    # plt.at(0).show(Points(vertices, c="blue"), Points(contact_points[vert_contact_points_idcs], c="red"))
+    plt.at(0).show(Points(contact_points, c="red"), Points(np.asarray(vertices)[contact_points_vert_idcs], c="blue"))
+    plt.interactive().close()
+
+    # plt.hist(d)
+    # plt.show()
 
     # Determine if each triangle is in contact. Being in contact means ALL vertices of triangle are in contact.
     contact_triangles = np.array(

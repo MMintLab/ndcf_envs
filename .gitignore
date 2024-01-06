@@ -1,5 +1,7 @@
 *~
 out
+assets/urdf
 *__pycache__*
 .idea
 *.egg-info
+output/
